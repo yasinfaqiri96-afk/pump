@@ -1,0 +1,14 @@
+{
+  "name": "pumpstation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "سیستم مدیریت تانک تیل و پمپ استیشن",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "UNLICENSED"
+}

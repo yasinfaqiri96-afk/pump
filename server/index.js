@@ -49,6 +49,14 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+/* پشت پروکسی (Render، Cloudflare) نشانی واقعی در x-forwarded-for است.
+   اولین مقدار نشانی مشتری است؛ بقیه پروکسی‌های میانی‌اند. */
+function clientIp(req) {
+  const fwd = (req.headers['x-forwarded-for'] || '').toString();
+  if (fwd) return fwd.split(',')[0].trim();
+  return (req.socket && req.socket.remoteAddress) || '';
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -82,7 +90,8 @@ const server = http.createServer(async (req, res) => {
     path: pathname.replace(/^\/api/, ''),
     query: u.query,
     body,
-    token: (req.headers['x-token'] || u.query.token || '').toString()
+    token: (req.headers['x-token'] || u.query.token || '').toString(),
+    ip: clientIp(req)
   };
 
   try {
@@ -110,7 +119,9 @@ server.listen(PORT, HOST, () => {
   console.log('  محلی    :  http://localhost:' + PORT);
   ips.forEach(ip => console.log('  شبکه    :  http://' + ip + ':' + PORT));
   console.log('');
-  console.log('  کاربر پیش‌فرض:  admin   —  پین:  1234');
+  console.log(process.env.ADMIN_PIN
+    ? '  کاربر پیش‌فرض:  admin   —  پین:  از متغیر ADMIN_PIN'
+    : '  کاربر پیش‌فرض:  admin   —  پین:  1234');
   console.log('  برای توقف: Ctrl+C');
   console.log('');
 });

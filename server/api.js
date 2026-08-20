@@ -85,20 +85,61 @@ async function handle(ctx) {
       if (!user) throw fail(401, 'وارد سیستم نشده‌اید');
       if (r.cap) need(user, r.cap);
     }
-    const body = await r.handler({ user, params, q: ctx.query, b: ctx.body });
+    const body = await r.handler({ user, params, q: ctx.query, b: ctx.body, ip: ctx.ip || '' });
     return { code: 200, body: body === undefined ? { ok: true } : body };
   }
   throw fail(404, 'مسیر یافت نشد: ' + ctx.path);
 }
 
+/* ================= سلامت ================= */
+route('GET', '/health', null, () => ({ ok: true, at: D.now() }));
+
+/* ================= محدودیت نرخ ورود =================
+   پین کوتاه است، پس بدون این محدودیت با چند هزار درخواست شکسته می‌شود.
+   شمارش در حافظه است — با ری‌استارت پاک می‌شود، که برای یک نمونه کافی است. */
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILS = 5;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const loginFails = new Map();
+
+function loginKey(ip, username) { return ip + '|' + username; }
+
+function loginGuard(ip, username) {
+  const rec = loginFails.get(loginKey(ip, username));
+  if (!rec) return;
+  if (rec.lockedUntil && rec.lockedUntil > Date.now()) {
+    const mins = Math.ceil((rec.lockedUntil - Date.now()) / 60000);
+    throw fail(429, 'تلاش‌های ناموفق زیاد بود. ' + mins + ' دقیقه بعد دوباره کوشش کنید.');
+  }
+}
+
+function loginFailed(ip, username) {
+  const k = loginKey(ip, username);
+  const nowMs = Date.now();
+  let rec = loginFails.get(k);
+  if (!rec || nowMs - rec.first > LOGIN_WINDOW_MS) rec = { first: nowMs, count: 0, lockedUntil: 0 };
+  rec.count += 1;
+  if (rec.count >= LOGIN_MAX_FAILS) rec.lockedUntil = nowMs + LOGIN_LOCK_MS;
+  loginFails.set(k, rec);
+  /* پاک‌سازی ورودی‌های کهنه تا نقشه بی‌نهایت بزرگ نشود */
+  if (loginFails.size > 5000)
+    for (const [key, v] of loginFails)
+      if (nowMs - v.first > LOGIN_WINDOW_MS && (!v.lockedUntil || v.lockedUntil < nowMs)) loginFails.delete(key);
+}
+
+function loginOk(ip, username) { loginFails.delete(loginKey(ip, username)); }
+
 /* ================= ورود ================= */
-route('POST', '/auth/login', null, ({ b }) => {
+route('POST', '/auth/login', null, ({ b, ip }) => {
   const username = String(b.username || '').trim().toLowerCase();
+  loginGuard(ip, username);
   const u = D.get(`SELECT * FROM app_user WHERE lower(username)=? AND active=1`, username);
   if (!u || !D.checkPin(b.pin, u.pin_hash)) {
-    D.audit(null, 'ورود ناموفق', 'app_user', null, 'نام کاربری: ' + username);
+    loginFailed(ip, username);
+    D.audit(null, 'ورود ناموفق', 'app_user', null, 'نام کاربری: ' + username + ' — نشانی: ' + ip);
     throw fail(401, 'نام کاربری یا پین اشتباه است');
   }
+  loginOk(ip, username);
   const token = crypto.randomBytes(24).toString('hex');
   const exp = new Date(Date.now() + 12 * 3600 * 1000).toISOString();
   D.run(`INSERT INTO session (token,user_id,created_at,expires_at) VALUES (?,?,?,?)`,

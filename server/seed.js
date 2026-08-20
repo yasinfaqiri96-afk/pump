@@ -15,9 +15,14 @@ function ensureSeed() {
   D.setSetting('dip_jump_pct', '25');
   D.setSetting('fiscal_start', '01-01');
 
-  /* کاربر مالک */
+  /* کاربر مالک.
+     پین از متغیر محیطی ADMIN_PIN خوانده می‌شود. در حالت production
+     بدون این متغیر سیستم بالا نمی‌آید تا پین پیش‌فرض روی اینترنت باز نماند. */
+  const adminPin = process.env.ADMIN_PIN || '';
+  if (!adminPin && process.env.NODE_ENV === 'production')
+    throw new Error('ADMIN_PIN تنظیم نشده است. برای اجرای production این متغیر محیطی الزامی است.');
   D.run(`INSERT INTO app_user (username,full_name,role,station_id,pin_hash,active,created_at)
-         VALUES ('admin','مدیر سیستم','owner',NULL,?,1,?)`, D.hashPin('1234'), now);
+         VALUES ('admin','مدیر سیستم','owner',NULL,?,1,?)`, D.hashPin(adminPin || '1234'), now);
 
   /* محصولات */
   const products = [

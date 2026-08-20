@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: pump
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: "echo no build step"
+    startCommand: "node server/index.js"
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      # پین مدیر — Render مقدار تصادفی امن می‌سازد.
+      # بعد از دیپلوی از داشبورد Render آن را بخوان.
+      - key: ADMIN_PIN
+        generateValue: true
+      # مسیر دیتابیس. در پلن رایگان دیسک ماندگار نیست
+      # و با هر ری‌استارت داده‌ها صفر می‌شود.
+      - key: PUMP_DB
+        value: /tmp/pump.db
