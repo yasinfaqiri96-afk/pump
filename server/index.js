@@ -22,7 +22,13 @@ const MIME = {
 };
 
 function send(res, code, body, headers) {
-  const h = Object.assign({ 'Cache-Control': 'no-store' }, headers || {});
+  const h = Object.assign({
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+  }, headers || {});
   res.writeHead(code, h);
   res.end(body);
 }
@@ -106,6 +112,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 require('./seed').ensureSeed();
+require('./backup').startAutomaticBackups();
 
 server.listen(PORT, HOST, () => {
   const nets = require('node:os').networkInterfaces();

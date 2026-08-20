@@ -9,9 +9,9 @@
     { k: 'variance', t: 'کسری تانک', d: 'روند کسری هر تانک و کشف نشتی یا دزدی' },
     { k: 'operator', t: 'کارکرد اپراتور', d: 'فروش، کسری صندوق و روند هر نفر' },
     { k: 'transit', t: 'کسری ترانزیت ترانسپورتران', d: 'کدام ترانسپورتر مکرر کم می‌آورد' },
-    { k: 'profit', t: 'سود و زیان', d: 'سود ناخالص هر محصول، مصارف، سود خالص' },
-    { k: 'aging', t: 'سن طلبات', d: 'طلبات 0-30، 31-60، 61-90، بالای 90 روز' },
-    { k: 'cash', t: 'جریان نقده', d: 'صندوق، بانک، حواله — ورود و خروج' },
+    { k: 'profit', t: 'سود و زیان', d: 'سود ناخالص هر محصول، مصارف، سود خالص', cap: 'finance' },
+    { k: 'aging', t: 'سن طلبات', d: 'طلبات 0-30، 31-60، 61-90، بالای 90 روز', cap: 'finance' },
+    { k: 'cash', t: 'جریان نقده', d: 'صندوق، بانک، حواله — ورود و خروج', cap: 'finance' },
     { k: 'stations', t: 'مقایسه استیشن‌ها', d: 'فروش، سود، کسری کنار هم' },
     { k: 'stockcard', t: 'دفتر موجودی تانک', d: 'هر حرکت لیتر با بیلانس جاری' }
   ];
@@ -23,7 +23,7 @@
         <div class="pad section stack">
           <div class="section-title">راپورها</div>
           <div class="grid-3">
-            ${REPORTS.map(x => h`<div class="card card-hover stack-s" data-r="${x.k}">
+            ${REPORTS.filter(x => !x.cap || can(x.cap)).map(x => h`<div class="card card-hover stack-s" data-r="${x.k}">
               <div class="tank-icon">${ICON('chart', 20)}</div>
               <div class="card-title">${esc(x.t)}</div>
               <div class="muted-s">${esc(x.d)}</div>
@@ -33,8 +33,9 @@
       view.querySelectorAll('[data-r]').forEach(c => c.onclick = () => go('#/reports?r=' + c.dataset.r));
       return;
     }
+    const def = REPORTS.find(x => x.k === key);
     const fn = { daily, variance, operator, transit, profit, aging, cash, stations, stockcard }[key];
-    if (!fn) return go('#/reports');
+    if (!fn || (def && def.cap && !can(def.cap))) return go('#/reports');
     await fn(view, r);
   });
 
@@ -52,7 +53,7 @@
           ${opts.extra || ''}
           <button class="btn btn-primary" type="submit" style="padding:.6rem 1.5rem">نمایش</button>
           <div class="sp"></div>
-          <button class="btn-ghost" type="button" onclick="window.print()">${ICON('print', 16)} چاپ</button>
+          <button class="btn-ghost" type="button" data-print>${ICON('print', 16)} چاپ</button>
           <button class="btn-ghost" type="button" data-back-rep>راپورهای دیگر</button>
         </form>
       </div>`;
@@ -67,6 +68,8 @@
     };
     const b = view.querySelector('[data-back-rep]');
     if (b) b.onclick = () => go('#/reports');
+    const p = view.querySelector('[data-print]');
+    if (p) p.onclick = () => window.print();
   }
   function head(title, sub) {
     return h`<div class="row-b">

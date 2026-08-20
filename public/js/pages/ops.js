@@ -66,16 +66,17 @@
           ${UI.field('شماره مهر مقصد', UI.input('seal_in'), 'مهر واقعی روی تانکر')}
         </div>
 
-        <div class="hair"></div>
-        <div class="card-title">2 — مقدار مبدا</div>
-        <div class="grid-3 keep">
-          ${UI.field('مقدار مبدا (تُن)', UI.input('src_qty_mt', { type: 'number', ph: '0' }))}
-          ${UI.field('دانسیته مبدا 15°', UI.input('src_density15', { type: 'number', ph: '0.84' }))}
-          ${UI.field('حرارت مبدا °C', UI.input('src_temp', { type: 'number' }))}
-        </div>
+        <details class="advanced-box">
+          <summary>جزئیات اختیاری بارنامه (تُن، دانسیته و حرارت مبدا)</summary>
+          <div class="grid-3 keep advanced-body">
+            ${UI.field('مقدار مبدا (تُن)', UI.input('src_qty_mt', { type: 'number', ph: '0' }))}
+            ${UI.field('دانسیته مبدا 15°', UI.input('src_density15', { type: 'number', ph: '0.84' }))}
+            ${UI.field('حرارت مبدا °C', UI.input('src_temp', { type: 'number' }))}
+          </div>
+        </details>
 
         <div class="hair"></div>
-        <div class="card-title">3 — دیپ و تخلیه</div>
+        <div class="card-title">2 — دیپ و تخلیه</div>
         ${UI.field('تانک', UI.select('tank_id', tanks.map(t => ({ v: t.id, t: t.code + ' — ' + t.name + ' (' + t.product_name + ')' })), tankId || tanks[0].id))}
         <div class="grid-2 keep">
           ${UI.field('دیپ قبل تخلیه (mm)', UI.input('dip_before_mm', { type: 'number' }))}
@@ -83,22 +84,25 @@
           ${UI.field('دیپ بعد تخلیه (mm)', UI.input('dip_after_mm', { type: 'number' }))}
           ${UI.field('آب بعد (mm)', UI.input('water_after_mm', { type: 'number', value: 0 }))}
         </div>
-        <div class="grid-2 keep">
-          ${UI.field('حرارت نمونه °C', UI.input('temp_c', { type: 'number', ph: '25' }))}
-          ${UI.field('دانسیته 15° مقصد', UI.input('density15', { type: 'number', ph: 'خودکار' }))}
-        </div>
-        <div class="banner banner-info"><div>قاعده: 30 دقیقه بعد از تخلیه دیپ بزنید تا سطح آرام شود.</div></div>
+        <details class="advanced-box">
+          <summary>جزئیات اختیاری محاسبه</summary>
+          <div class="grid-2 keep advanced-body">
+            ${UI.field('حرارت نمونه °C', UI.input('temp_c', { type: 'number', ph: 'خودکار: 15' }))}
+            ${UI.field('دانسیته 15° مقصد', UI.input('density15', { type: 'number', ph: 'خودکار از محصول' }))}
+          </div>
+        </details>
+        <div class="banner banner-info"><div>برای نتیجه بهتر، حدود 30 دقیقه بعد از تخلیه دیپ بزنید تا سطح آرام شود.</div></div>
         <div id="rcPrev"></div>
 
         <div class="hair"></div>
-        <div class="card-title">4 — بها</div>
+        <div class="card-title">3 — بها و پرداخت</div>
         <div class="grid-3 keep">
           ${UI.field('قیمت هر لیتر', UI.input('unit_cost', { type: 'number' }))}
           ${UI.field('مصارف جانبی', UI.input('other_cost', { type: 'number', value: 0 }), 'کرایه، گمرک، تخلیه')}
           ${UI.field('نوع پرداخت', UI.select('payment_kind', PAY, 'credit'))}
         </div>
         <div class="grid-2 keep">
-          ${UI.field('ارز', UI.select('currency', [{ v: 'AFN', t: 'افغانی' }, { v: 'USD', t: 'دالر' }, { v: 'PKR', t: 'کلدار' }, { v: 'IRR', t: 'تومان' }], S.meta.base_currency))}
+          ${UI.field('ارز', UI.select('currency', [{ v: 'AFN', t: 'افغانی' }, { v: 'USD', t: 'دالر' }, { v: 'PKR', t: 'کلدار' }, { v: 'IRR', t: 'ریال ایران' }], S.meta.base_currency))}
           ${UI.field('نرخ تبادله', UI.input('fx_rate', { type: 'number', value: 1 }), '1 اگر ارز پایه است')}
         </div>
 
@@ -124,15 +128,20 @@
         });
         f.querySelector('#rcPrev').innerHTML = h`
           <div class="card card-flat stack-s">
-            <div class="grid-4 keep">
-              <div class="stat"><div class="stat-num sm">${L(p.vol_obs_l)}</div><div class="stat-lbl">لیتر دریافتی</div></div>
-              <div class="stat"><div class="stat-num sm">${L(p.vol15_l)}</div><div class="stat-lbl">لیتر در 15°</div></div>
-              <div class="stat"><div class="stat-num sm">${n(p.qty_mt, 3)}</div><div class="stat-lbl">تُن متریک</div></div>
-              <div class="stat"><div class="stat-num sm ${p.variance_mt < 0 ? 'neg' : 'pos'}">${n(p.variance_mt, 3)}</div><div class="stat-lbl">کسری ترانزیت (تُن)</div></div>
+            <div class="grid-2 keep">
+              <div class="stat"><div class="stat-num sm">${L(p.vol_obs_l)}</div><div class="stat-lbl">مقدار دریافتی</div></div>
+              <div class="stat"><div class="stat-num sm">${L(p.capacity_free)}</div><div class="stat-lbl">جای خالی تانک</div></div>
             </div>
-            <div class="muted-s txt-c">ضریب VCF ${fa(p.vcf)} · قبل ${L(p.vol_before_l)} · بعد ${L(p.vol_after_l)} · جای خالی تانک ${L(p.capacity_free)}</div>
+            <details class="advanced-box">
+              <summary>دیدن محاسبات تخنیکی</summary>
+              <div class="grid-3 keep advanced-body">
+                <div class="stat"><div class="stat-num sm">${L(p.vol15_l)}</div><div class="stat-lbl">لیتر در 15°</div></div>
+                <div class="stat"><div class="stat-num sm">${n(p.qty_mt, 3)}</div><div class="stat-lbl">تُن متریک</div></div>
+                <div class="stat"><div class="stat-num sm ${p.variance_mt < 0 ? 'neg' : 'pos'}">${n(p.variance_mt, 3)}</div><div class="stat-lbl">کسری ترانزیت</div></div>
+              </div>
+            </details>
             ${p.overflow ? UI.banner('error', 'سطح بعد از تخلیه از ظرفیت تانک می‌گذرد. عدد را کنترل کنید.') : ''}
-            ${p.over_tolerance ? UI.banner('error', 'کسری ترانزیت ' + pct(p.variance_pct) + ' از تولرانس ' + pct(p.tolerance_pct) + ' گذشته — هشدار ثبت می‌شود.') : ''}
+            ${p.over_tolerance ? UI.banner('error', 'کسری ترانزیت ' + pct(p.variance_pct) + ' از حد مجاز گذشته — هشدار ثبت می‌شود.') : ''}
           </div>`;
       } catch (e) { f.querySelector('#rcPrev').innerHTML = UI.banner('error', esc(e.message)); }
     }
@@ -201,16 +210,19 @@
           ${UI.field('نوع پرداخت', UI.select('payment_kind', PAY, 'credit'))}
         </div>
         ${UI.field('تانک', UI.select('tank_id', tanks.map(t => ({ v: t.id, t: t.code + ' — ' + t.name + ' · موجودی ' + L(t.book_l) })), tanks[0].id))}
-        <div class="grid-3 keep">
-          ${UI.field('مقدار (لیتر)', UI.input('qty_obs', { type: 'number', cls: 'big' }))}
-          ${UI.field('حرارت °C', UI.input('temp_c', { type: 'number' }))}
-          ${UI.field('دانسیته 15°', UI.input('density15', { type: 'number', ph: 'خودکار' }))}
-        </div>
         <div class="grid-2 keep">
-          ${UI.field('مبنای قیمت', UI.select('price_basis', [
-      { v: 'liter', t: 'هر لیتر مشاهده‌ای' }, { v: 'liter15', t: 'هر لیتر در 15°' }, { v: 'mt', t: 'هر تُن متریک' }], 'liter'))}
-          ${UI.field('نرخ واحد', UI.input('unit_price', { type: 'number', ph: 'نرخ‌نامه' }))}
+          ${UI.field('مقدار (لیتر)', UI.input('qty_obs', { type: 'number', cls: 'big' }))}
+          ${UI.field('نرخ هر لیتر', UI.input('unit_price', { type: 'number', ph: 'خودکار از نرخ‌نامه' }))}
         </div>
+        <details class="advanced-box">
+          <summary>جزئیات اختیاری فروش عمده</summary>
+          <div class="grid-3 keep advanced-body">
+            ${UI.field('حرارت °C', UI.input('temp_c', { type: 'number', ph: 'خودکار: 15' }))}
+            ${UI.field('دانسیته 15°', UI.input('density15', { type: 'number', ph: 'خودکار از محصول' }))}
+            ${UI.field('مبنای قیمت', UI.select('price_basis', [
+      { v: 'liter', t: 'هر لیتر' }, { v: 'liter15', t: 'هر لیتر در 15°' }, { v: 'mt', t: 'هر تُن متریک' }], 'liter'))}
+          </div>
+        </details>
         <div class="grid-3 keep">
           ${UI.field('نمبر پلیت', UI.input('truck_plate'))}
           ${UI.field('شماره مهر', UI.input('seal_no'))}

@@ -95,7 +95,7 @@ route('GET', '/reports/dashboard', 'read', ({ user, q }) => {
 /* ============================================================
    راپور روزانه استیشن
    ============================================================ */
-route('GET', '/reports/daily', 'read', ({ q }) => {
+route('GET', '/reports/daily', 'report', ({ q }) => {
   const stationId = Number(q.station_id || 0);
   if (!stationId) throw fail(400, 'استیشن را انتخاب کنید');
   const d = docDate(q.date || today());
@@ -170,7 +170,7 @@ route('GET', '/reports/daily', 'read', ({ q }) => {
 /* ============================================================
    کسری تانک — روند
    ============================================================ */
-route('GET', '/reports/variance', 'read', ({ q }) => {
+route('GET', '/reports/variance', 'report', ({ q }) => {
   const { from, to } = range(q);
   const s = stFilter(q, 'd');
   const rows = D.all(`SELECT d.tank_id, t.code tank_code, t.name tank_name, p.name product_name, p.color,
@@ -209,7 +209,7 @@ route('GET', '/reports/variance', 'read', ({ q }) => {
 /* ============================================================
    کارکرد اپراتور
    ============================================================ */
-route('GET', '/reports/operator', 'read', ({ q }) => {
+route('GET', '/reports/operator', 'report', ({ q }) => {
   const { from, to } = range(q);
   const s = stFilter(q, 's');
   const rows = D.all(`SELECT s.operator_id, p.name operator_name, COUNT(*) shifts,
@@ -232,7 +232,7 @@ route('GET', '/reports/operator', 'read', ({ q }) => {
 /* ============================================================
    سن طلبات
    ============================================================ */
-route('GET', '/reports/aging', 'read', ({ q }) => {
+route('GET', '/reports/aging', 'finance', ({ q }) => {
   const d = docDate(q.date || today());
   const kind = q.kind || 'customer';
   const parties = D.all(`SELECT * FROM party WHERE kind=? AND active=1`, kind);
@@ -275,7 +275,7 @@ route('GET', '/reports/aging', 'read', ({ q }) => {
 /* ============================================================
    سود ناخالص
    ============================================================ */
-route('GET', '/reports/profit', 'read', ({ q }) => {
+route('GET', '/reports/profit', 'finance', ({ q }) => {
   const { from, to } = range(q);
   const st = q.station_id ? Number(q.station_id) : null;
   const f = st ? ' AND station_id=' + st : '';
@@ -326,7 +326,7 @@ route('GET', '/reports/profit', 'read', ({ q }) => {
 /* ============================================================
    جریان نقده
    ============================================================ */
-route('GET', '/reports/cash', 'read', ({ q }) => {
+route('GET', '/reports/cash', 'finance', ({ q }) => {
   const { from, to } = range(q);
   const s = stFilter(q, 'm');
   const rows = D.all(`SELECT m.account, m.method, m.direction,
@@ -356,7 +356,7 @@ route('GET', '/reports/cash', 'read', ({ q }) => {
 /* ============================================================
    کسری ترانزیت هر ترانسپورتر
    ============================================================ */
-route('GET', '/reports/transit', 'read', ({ q }) => {
+route('GET', '/reports/transit', 'report', ({ q }) => {
   const { from, to } = range(q);
   const s = stFilter(q, 'r');
   const rows = D.all(`SELECT r.transporter_id, COALESCE(p.name,'— بدون ترانسپورتر —') transporter_name,
@@ -378,9 +378,9 @@ route('GET', '/reports/transit', 'read', ({ q }) => {
 /* ============================================================
    مقایسه استیشن‌ها
    ============================================================ */
-route('GET', '/reports/stations', 'read', ({ q }) => {
+route('GET', '/reports/stations', 'report', ({ user, q }) => {
   const { from, to } = range(q);
-  const rows = D.all(`SELECT * FROM station WHERE active=1 ORDER BY name`).map(s => {
+  const rows = D.all(`SELECT * FROM station WHERE active=1 ${user.station_id ? 'AND id=' + Number(user.station_id) : ''} ORDER BY name`).map(s => {
     const sh = D.get(`SELECT COALESCE(SUM(total_liters),0) lit, COALESCE(SUM(total_amount),0) amt,
         COALESCE(SUM(cash_variance),0) cv, COUNT(*) n
       FROM shift WHERE station_id=? AND status='closed' AND doc_date>=? AND doc_date<=?`, s.id, from, to);
@@ -403,7 +403,7 @@ route('GET', '/reports/stations', 'read', ({ q }) => {
 /* ============================================================
    دفتر موجودی یک تانک
    ============================================================ */
-route('GET', '/reports/stockcard', 'read', ({ q }) => {
+route('GET', '/reports/stockcard', 'report', ({ q }) => {
   const tankId = Number(q.tank_id || 0);
   if (!tankId) throw fail(400, 'تانک را انتخاب کنید');
   const { from, to } = range(q);

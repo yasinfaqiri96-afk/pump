@@ -381,3 +381,17 @@ CREATE TABLE IF NOT EXISTS setting (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- سه دفتر اصلی فقط افزودنی‌اند؛ اصلاح باید با سند معکوس انجام شود.
+CREATE TRIGGER IF NOT EXISTS stock_move_no_update BEFORE UPDATE ON stock_move
+BEGIN SELECT RAISE(ABORT, 'stock_move فقط افزودنی است'); END;
+CREATE TRIGGER IF NOT EXISTS stock_move_no_delete BEFORE DELETE ON stock_move
+BEGIN SELECT RAISE(ABORT, 'stock_move فقط افزودنی است'); END;
+CREATE TRIGGER IF NOT EXISTS money_move_no_update BEFORE UPDATE ON money_move
+BEGIN SELECT RAISE(ABORT, 'money_move فقط افزودنی است'); END;
+CREATE TRIGGER IF NOT EXISTS money_move_no_delete BEFORE DELETE ON money_move
+BEGIN SELECT RAISE(ABORT, 'money_move فقط افزودنی است'); END;
+CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log فقط افزودنی است'); END;
+CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log فقط افزودنی است'); END;

@@ -98,13 +98,21 @@ function tankBook(tankId, untilDate) {
   return round(opening + num(q.v), 3);
 }
 
+/* برای دیپ، ساعت مهم است: حرکت بعدی همان روز نباید داخل موجودی زمان دیپ بیاید. */
+function tankBookAt(tankId, at) {
+  const t = get(`SELECT opening_qty FROM tank WHERE id=?`, tankId);
+  const q = get(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN qty_obs ELSE -qty_obs END),0) v
+                 FROM stock_move WHERE tank_id=? AND moved_at<=?`, tankId, at || now());
+  return round(num(t && t.opening_qty) + num(q.v), 3);
+}
+
 /* میانگین موزون بهای تمام‌شده تانک */
 function tankWac(tankId) {
   const t = get(`SELECT opening_qty, opening_cost FROM tank WHERE id=?`, tankId);
   let qty = t ? num(t.opening_qty) : 0;
   let val = qty * (t ? num(t.opening_cost) : 0);
   const moves = all(`SELECT direction, qty_obs, unit_cost FROM stock_move
-                     WHERE tank_id=? ORDER BY id`, tankId);
+                     WHERE tank_id=? ORDER BY moved_at, id`, tankId);
   for (const m of moves) {
     if (m.direction === 'in') {
       val += num(m.qty_obs) * num(m.unit_cost);
@@ -168,23 +176,33 @@ function setSetting(key, value) {
 /* نرخ فعال یک محصول در یک تاریخ.
    اگر در آن تاریخ نرخی نافذ نبود، به قدیمی‌ترین نرخ ثبت‌شده برمی‌گردد
    تا هرگز فروش با نرخ صفر ثبت نشود. */
+function priceInBase(row, date) {
+  if (!row) return 0;
+  const base = baseCurrency();
+  if (!row.currency || row.currency === base) return num(row.price);
+  const fx = get(`SELECT rate FROM fx_rate WHERE ccy=? AND rate_date<=?
+                  ORDER BY rate_date DESC LIMIT 1`, row.currency, date);
+  return fx ? round(num(row.price) * num(fx.rate), 4) : 0;
+}
+
 function activePrice(productId, stationId, date) {
-  const r = get(`SELECT price FROM price
+  const r = get(`SELECT price,currency FROM price
      WHERE product_id=? AND effective_from<=?
        AND (station_id IS NULL OR station_id=?)
-     ORDER BY effective_from DESC, id DESC LIMIT 1`,
-    productId, date, stationId ?? -1);
-  if (r && num(r.price) > 0) return num(r.price);
-  const fb = get(`SELECT price FROM price
+     ORDER BY CASE WHEN station_id=? THEN 0 ELSE 1 END, effective_from DESC, id DESC LIMIT 1`,
+    productId, date, stationId ?? -1, stationId ?? -1);
+  const current = priceInBase(r, date);
+  if (current > 0) return current;
+  const fb = get(`SELECT price,currency FROM price
      WHERE product_id=? AND (station_id IS NULL OR station_id=?)
      ORDER BY effective_from ASC, id ASC LIMIT 1`, productId, stationId ?? -1);
-  return fb ? num(fb.price) : 0;
+  return priceInBase(fb, date);
 }
 
 module.exports = {
   db, all, get, run, tx, now, num, round,
   hashPin, checkPin, audit, raiseAlert,
-  addStockMove, tankBook, tankWac, calibChart,
+  addStockMove, tankBook, tankBookAt, tankWac, calibChart,
   addMoneyMove, partyBalance,
   baseCurrency, setting, setSetting, activePrice,
   DB_PATH, ROOT

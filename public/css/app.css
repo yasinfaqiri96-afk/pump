@@ -676,3 +676,12 @@ table.tbl tfoot td { font-weight: 700; color: var(--secondry-2); border-top: 1px
   font-size: 12px; font-weight: 500; color: var(--n-grey-2); transition: var(--trans-1);
 }
 .jd-act:hover { color: var(--prime-1); border-color: var(--prime-2); }
+
+/* جزئیات تخنیکی به‌صورت پیش‌فرض پنهان است تا فورم روزانه ساده بماند. */
+.advanced-box{border:1px solid var(--n-grey-03);border-radius:12px;background:var(--n-grey-01);overflow:hidden}
+.advanced-box>summary{cursor:pointer;list-style:none;padding:.8rem 1rem;color:var(--prime-1);font-weight:600;user-select:none}
+.advanced-box>summary::-webkit-details-marker{display:none}
+.advanced-box>summary::before{content:'＋';display:inline-block;margin-inline-end:.45rem}
+.advanced-box[open]>summary::before{content:'−'}
+.advanced-box[open]>summary{border-bottom:1px solid var(--n-grey-03)}
+.advanced-body{padding:1rem}

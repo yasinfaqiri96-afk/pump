@@ -28,8 +28,7 @@ function ensureSeed() {
   const products = [
     ['PET', 'پطرول', 'لیتر', 'gasoline', 0.745, 0.6, 0, '#0B8457'],
     ['DSL', 'دیزل', 'لیتر', 'diesel', 0.840, 0.5, 0, '#0B6784'],
-    ['KER', 'تیل خاک', 'لیتر', 'jet', 0.800, 0.5, 0, '#6ABBAB'],
-    ['LPG', 'گاز مایع', 'کیلوگرام', 'lpg', 0.540, 0.8, 1, '#FF4200']
+    ['KER', 'تیل خاک', 'لیتر', 'jet', 0.800, 0.5, 0, '#6ABBAB']
   ];
   const pIds = {};
   for (const p of products) {
@@ -40,10 +39,10 @@ function ensureSeed() {
 
   /* استیشن نمونه */
   const s = D.run(`INSERT INTO station (code,name,province,address,phone,active)
-    VALUES ('ST01','استیشن مرکزی','کابل','سرک عمومی','0700000000',1)`);
+    VALUES ('ST01','استیشن مرکزی','هرات','سرک عمومی','0700000000',1)`);
   const stationId = Number(s.lastInsertRowid);
 
-  /* تانک‌ها + جدول سنجش خطی نمونه */
+  /* تانک‌های نمونه. جدول سنجش عمداً ساخته نمی‌شود؛ برای تانک افقی جدول خطی خطرناک است. */
   const tanks = [
     // کد، نام، محصول، ظرفیت، ذخیره مرده، حد هشدار، موجودی افتتاحیه، بهای واحد
     ['T-01', 'تانک پطرول ۱', pIds.PET, 40000, 500, 4000, 26500, 71],
@@ -58,10 +57,6 @@ function ensureSeed() {
       stationId, t[2], t[0], t[1], t[3], t[4], t[5], t[6], t[7]);
     const id = Number(r.lastInsertRowid);
     tankIds[t[0]] = id;
-    // جدول سنجش خطی: ارتفاع ۲۰۰۰ mm، گام ۱۰ mm
-    const st = D.db.prepare(`INSERT INTO tank_calib (tank_id,dip_mm,volume_l) VALUES (?,?,?)`);
-    for (let mm = 0; mm <= 2000; mm += 10)
-      st.run(id, mm, D.round(t[3] * mm / 2000, 3));
   }
 
   /* دستگاه و نازل */
@@ -82,7 +77,7 @@ function ensureSeed() {
   /* نرخ اولیه */
   /* نرخ اولیه با تاریخ اجرای گذشته تا اسناد قدیمی هم نرخ پیدا کنند */
   const priceStart = Jalali.addDaysGreg(today, -365);
-  const prices = [[pIds.PET, 78], [pIds.DSL, 73], [pIds.KER, 70], [pIds.LPG, 67]];
+  const prices = [[pIds.PET, 78], [pIds.DSL, 73], [pIds.KER, 70]];
   for (const p of prices)
     D.run(`INSERT INTO price (station_id,product_id,price,currency,effective_from,note,created_by,created_at)
            VALUES (NULL,?,?, 'AFN', ?, 'نرخ اولیه سیستم', 1, ?)`, p[0], p[1], priceStart, now);
@@ -101,7 +96,7 @@ function ensureSeed() {
   D.audit(null, 'راه‌اندازی اولیه سیستم', 'setting', null,
     'استیشن، محصولات، تانک‌ها، نازل‌ها و نرخ اولیه ایجاد شد');
 
-  console.log('  ✓ داده اولیه ساخته شد (استیشن مرکزی، ۳ تانک، ۴ نازل، ۴ محصول)');
+  console.log('  ✓ داده اولیه ساخته شد (استیشن هرات، ۳ تانک، ۴ نازل، ۳ محصول)');
 }
 
 module.exports = { ensureSeed };

@@ -362,10 +362,13 @@
           ${UI.field('دیپ (میلی‌متر)', UI.input('dip_mm', { type: 'number', cls: 'big', ph: '0' }))}
           ${UI.field('دیپ آب (میلی‌متر)', UI.input('water_mm', { type: 'number', value: 0 }))}
         </div>
-        <div class="grid-2 keep">
-          ${UI.field('درجه حرارت (°C)', UI.input('temp_c', { type: 'number', ph: '25' }))}
-          ${UI.field('دانسیته 15°', UI.input('density15', { type: 'number', ph: 'خودکار' }))}
-        </div>
+        <details class="advanced-box">
+          <summary>جزئیات اختیاری (حرارت و دانسیته)</summary>
+          <div class="grid-2 keep advanced-body">
+            ${UI.field('درجه حرارت (°C)', UI.input('temp_c', { type: 'number', ph: 'خودکار: 15' }))}
+            ${UI.field('دانسیته 15°', UI.input('density15', { type: 'number', ph: 'خودکار از محصول' }))}
+          </div>
+        </details>
         ${UI.field('نوع', UI.select('kind', [
       { v: 'spot', t: 'دیپ عادی' }, { v: 'open', t: 'افتتاحیه شفت' },
       { v: 'close', t: 'اختتامیه شفت' }, { v: 'pre_unload', t: 'قبل تخلیه' },
@@ -599,7 +602,7 @@
           : 'فروش ' + L(sold) + ' لیتر = ' + money(amt) + ' ' + S.meta.base_currency;
       });
       const nonCash = num(d.credit_amount) + num(d.coupon_amount) + num(d.bank_amount);
-      const expected = total - nonCash;
+      const expected = num(s.float_amount) + total - nonCash;
       const counted = num(d.cash_counted);
       f.querySelector('#sumSale').textContent = money(total);
       f.querySelector('#sumExp').textContent = money(expected);
@@ -649,7 +652,7 @@
           <div class="section-title">شفت #${fa(s.id)} — ${esc(s.operator_name)}</div>
           ${UI.chip(s.status === 'open' ? 'باز' : 'بسته', s.status === 'open' ? 'green' : 'grey')}
           <div class="sp"></div>
-          <button class="btn-ghost no-print" onclick="window.print()">${ICON('print', 16)} چاپ</button>
+          <button class="btn-ghost no-print" data-print>${ICON('print', 16)} چاپ</button>
         </div>
 
         <div class="grid-4 keep">
@@ -703,6 +706,7 @@
         ${s.status === 'open' && can('shift') ? h`<button class="btn btn-primary" data-close>بستن این شفت</button>` : ''}
       </div>`;
     view.querySelector('[data-back]').onclick = () => go('#/shifts');
+    view.querySelector('[data-print]').onclick = () => window.print();
     const cb = view.querySelector('[data-close]');
     if (cb) cb.onclick = () => CloseShiftForm(s.id);
   }

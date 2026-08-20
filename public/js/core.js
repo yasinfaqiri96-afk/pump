@@ -466,10 +466,10 @@
     { key: 'shifts', label: 'شفت', cap: 'shift', icon: 'clock' },
     { key: 'receipts', label: 'ورود تیل', cap: 'ops', icon: 'truck' },
     { key: 'bulk', label: 'فروش عمده', cap: 'ops', icon: 'out' },
-    { key: 'parties', label: 'مشتریان', cap: 'read', icon: 'users' },
+    { key: 'parties', label: 'مشتریان', cap: 'ops', icon: 'users' },
     { key: 'prices', label: 'نرخ‌نامه', cap: 'read', icon: 'tag' },
     { key: 'expenses', label: 'مصارف', cap: 'finance', icon: 'wallet' },
-    { key: 'reports', label: 'راپورها', cap: 'read', icon: 'chart' },
+    { key: 'reports', label: 'راپورها', cap: 'report', icon: 'chart' },
     { key: 'alerts', label: 'هشدارها', cap: 'read', icon: 'bell' },
     { key: 'setup', label: 'تنظیمات', cap: 'read', icon: 'gear' }
   ];

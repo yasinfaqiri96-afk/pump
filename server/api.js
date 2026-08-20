@@ -8,10 +8,10 @@ function fail(code, msg) { const e = new Error(msg); e.httpCode = code; return e
 
 /* ---------------- صلاحیت ---------------- */
 const ROLE_CAPS = {
-  owner: ['admin', 'setup', 'ops', 'finance', 'dip', 'shift', 'read'],
-  manager: ['setup', 'ops', 'finance', 'dip', 'shift', 'read'],
-  accountant: ['finance', 'ops', 'read'],
-  station: ['ops', 'dip', 'shift', 'read'],
+  owner: ['admin', 'setup', 'ops', 'finance', 'dip', 'shift', 'report', 'read'],
+  manager: ['setup', 'ops', 'finance', 'dip', 'shift', 'report', 'read'],
+  accountant: ['finance', 'ops', 'report', 'read'],
+  station: ['ops', 'dip', 'shift', 'report', 'read'],
   operator: ['shift', 'read'],
   dipper: ['dip', 'read']
 };
@@ -55,9 +55,18 @@ function stationScope(user, stationId) {
 /* حجم خالص از دیپ */
 function dipVolumes(tankId, dipMm, waterMm) {
   const chart = D.calibChart(tankId);
-  if (!chart.length) throw fail(400, 'جدول سنجش این تانک ثبت نشده است');
-  const gross = Petro.dipToVolume(chart, N(dipMm));
-  const water = N(waterMm) > 0 ? Petro.dipToVolume(chart, N(waterMm)) : 0;
+  if (chart.length < 2) throw fail(400, 'جدول سنجش این تانک ثبت نشده یا کامل نیست');
+  const dip = Number(dipMm), waterDip = Number(waterMm || 0);
+  if (!Number.isFinite(dip) || dip < 0) throw fail(400, 'عدد دیپ باید صفر یا بزرگتر باشد');
+  if (!Number.isFinite(waterDip) || waterDip < 0) throw fail(400, 'عدد آب باید صفر یا بزرگتر باشد');
+  if (waterDip > dip) throw fail(400, 'دیپ آب نمی‌تواند از دیپ کل بیشتر باشد');
+  const min = Number(chart[0].dip_mm), max = Number(chart[chart.length - 1].dip_mm);
+  if (dip < min || dip > max)
+    throw fail(400, 'دیپ باید داخل محدوده جدول سنجش باشد (' + min + ' تا ' + max + ' میلی‌متر)');
+  if (waterDip < min || waterDip > max)
+    throw fail(400, 'دیپ آب بیرون محدوده جدول سنجش است');
+  const gross = Petro.dipToVolume(chart, dip);
+  const water = waterDip > 0 ? Petro.dipToVolume(chart, waterDip) : 0;
   return { gross: R(gross, 3), water: R(water, 3), net: R(gross - water, 3), chart };
 }
 
@@ -73,6 +82,45 @@ function route(method, pattern, cap, handler) {
   routes.push({ method, rx, keys, cap, handler });
 }
 
+function assertTankScope(user, tankId) {
+  if (!user || !user.station_id || !tankId) return;
+  const t = D.get(`SELECT station_id FROM tank WHERE id=?`, Number(tankId));
+  if (!t) throw fail(404, 'تانک یافت نشد');
+  stationScope(user, t.station_id);
+}
+
+/* محدوده استیشن در یک نقطه مرکزی تطبیق می‌شود تا هیچ مسیر جدیدی آن را فراموش نکند. */
+function enforceStationScope(user, path, params, q, b) {
+  if (!user || !user.station_id) return;
+  const sid = Number(user.station_id);
+  if (q.station_id) stationScope(user, q.station_id);
+  if (b.station_id) stationScope(user, b.station_id);
+  q.station_id = sid;
+
+  ['tank_id', 'from_tank_id', 'to_tank_id'].forEach(k => {
+    if (b[k]) assertTankScope(user, b[k]);
+    if (q[k]) assertTankScope(user, q[k]);
+  });
+  if (/^\/tanks\//.test(path)) assertTankScope(user, params.id);
+
+  if (/^\/shifts\//.test(path) && params.id) {
+    const x = D.get(`SELECT station_id FROM shift WHERE id=?`, Number(params.id));
+    if (x) stationScope(user, x.station_id);
+  }
+  if (/^\/alerts\//.test(path) && params.id) {
+    const x = D.get(`SELECT station_id FROM alert WHERE id=?`, Number(params.id));
+    if (x && x.station_id) stationScope(user, x.station_id);
+  }
+  if (/^\/nozzles\//.test(path) && params.id) {
+    const x = D.get(`SELECT d.station_id FROM nozzle n JOIN dispenser d ON d.id=n.dispenser_id WHERE n.id=?`, Number(params.id));
+    if (x) stationScope(user, x.station_id);
+  }
+  if (/^\/dispensers\//.test(path) && params.id) {
+    const x = D.get(`SELECT station_id FROM dispenser WHERE id=?`, Number(params.id));
+    if (x) stationScope(user, x.station_id);
+  }
+}
+
 async function handle(ctx) {
   const user = userFromToken(ctx.token);
   for (const r of routes) {
@@ -84,6 +132,7 @@ async function handle(ctx) {
     if (r.cap !== null) {
       if (!user) throw fail(401, 'وارد سیستم نشده‌اید');
       if (r.cap) need(user, r.cap);
+      enforceStationScope(user, ctx.path, params, ctx.query, ctx.body);
     }
     const body = await r.handler({ user, params, q: ctx.query, b: ctx.body, ip: ctx.ip || '' });
     return { code: 200, body: body === undefined ? { ok: true } : body };
@@ -176,8 +225,8 @@ route('GET', '/meta', '', ({ user }) => {
     products: D.all(`SELECT * FROM product WHERE active=1 ORDER BY id`),
     base_currency: D.baseCurrency(),
     company: D.setting('company_name', 'شرکت'),
-    open_alerts: D.get(`SELECT COUNT(*) c FROM alert WHERE resolved=0`).c,
-    open_shifts: D.get(`SELECT COUNT(*) c FROM shift WHERE status='open'`).c,
+    open_alerts: D.get(`SELECT COUNT(*) c FROM alert WHERE resolved=0 ${user.station_id ? 'AND (station_id IS NULL OR station_id=' + Number(user.station_id) + ')' : ''}`).c,
+    open_shifts: D.get(`SELECT COUNT(*) c FROM shift WHERE status='open' ${user.station_id ? 'AND station_id=' + Number(user.station_id) : ''}`).c,
     role_names: ROLE_NAMES
   };
 });
@@ -366,11 +415,14 @@ route('PUT', '/nozzles/:id', 'setup', ({ user, params, b }) => {
 });
 
 /* ================= طرف حساب ================= */
-route('GET', '/parties', 'read', ({ q }) => {
+route('GET', '/parties', 'read', ({ user, q }) => {
   const args = []; let w = 'WHERE 1=1';
   if (q.kind) { w += ' AND kind=?'; args.push(q.kind); }
   if (q.active !== '0') w += ' AND active=1';
   const rows = D.all(`SELECT * FROM party ${w} ORDER BY name`, ...args);
+  /* اپراتور برای انتخاب مشتری/کارمند فقط نام و شناسه را لازم دارد، نه بیلانس و معاش. */
+  if (!can(user, 'ops') && !can(user, 'finance'))
+    return rows.map(p => ({ id: p.id, kind: p.kind, name: p.name }));
   return rows.map(p => Object.assign({}, p, { balance: D.partyBalance(p.id) }));
 });
 
@@ -392,7 +444,7 @@ route('PUT', '/parties/:id', 'ops', ({ user, params, b }) => {
   D.audit(user, 'ویرایش طرف حساب', 'party', params.id, b.name);
 });
 
-route('GET', '/parties/:id/ledger', 'read', ({ params }) => {
+route('GET', '/parties/:id/ledger', 'finance', ({ params }) => {
   const p = D.get(`SELECT * FROM party WHERE id=?`, params.id);
   if (!p) throw fail(404, 'طرف حساب یافت نشد');
   const rows = D.all(`SELECT * FROM money_move WHERE party_id=? AND account IN ('receivable','payable')
@@ -446,7 +498,7 @@ route('POST', '/prices', 'finance', ({ user, b }) => {
 });
 
 /* ================= نرخ اسعار ================= */
-route('GET', '/fx', 'read', () => D.all(`SELECT * FROM fx_rate ORDER BY rate_date DESC, ccy LIMIT 200`));
+route('GET', '/fx', 'finance', () => D.all(`SELECT * FROM fx_rate ORDER BY rate_date DESC, ccy LIMIT 200`));
 
 route('POST', '/fx', 'finance', ({ user, b }) => {
   req(b, 'ccy', 'ارز'); req(b, 'rate', 'نرخ');

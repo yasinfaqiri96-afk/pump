@@ -60,7 +60,8 @@ function insertDip(user, b, shiftId) {
   const temp = N(b.temp_c, 15);
   const vcf = Petro.vcf(d15, temp, t.density_group);
   const dd = docDate(b.doc_date);
-  const book = D.tankBook(tankId, dd);
+  const readAt = b.read_at || D.now();
+  const book = D.tankBookAt(tankId, readAt);
   const varr = Petro.variance(v.net, book, 0);
 
   const r = D.run(`INSERT INTO dip
@@ -68,7 +69,7 @@ function insertDip(user, b, shiftId) {
      vol_gross_l,vol_water_l,vol_net_l,vol15_l,book_l,variance_l,variance_pct,
      shift_id,read_by,note,created_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    t.station_id, tankId, b.read_at || D.now(), dd, b.kind || 'spot',
+    t.station_id, tankId, readAt, dd, b.kind || 'spot',
     N(b.dip_mm), N(b.water_mm), temp, d15,
     v.gross, v.water, v.net, R(v.net * vcf, 3), book, varr.qty, varr.pct,
     shiftId || null, user.id, b.note || null, D.now());
@@ -276,6 +277,7 @@ route('POST', '/shifts/:id/close', 'shift', ({ user, params, b }) => {
         if (N(p.credit_limit) > 0 && bal + amt > N(p.credit_limit)) {
           if (!b.override_credit) throw fail(400,
             'مشتری ' + p.name + ' از سقف اعتبار می‌گذرد (بیلانس ' + bal + ' + ' + amt + ' > ' + p.credit_limit + ')');
+          if (!A.can(user, 'finance')) throw fail(403, 'فقط مدیر یا مسئول مالی می‌تواند از سقف اعتبار عبور کند');
           D.raiseAlert(s.station_id, 'high', 'CREDIT_OVERRIDE',
             'عبور از سقف اعتبار با اجازه مدیر',
             'مشتری ' + p.name + ' — بیلانس ' + bal + ' — فروش نسیه ' + amt + ' — سقف ' + p.credit_limit,
@@ -289,7 +291,7 @@ route('POST', '/shifts/:id/close', 'shift', ({ user, params, b }) => {
       } else {
         D.addMoneyMove({
           doc_date: s.doc_date, station_id: s.station_id,
-          account: t.kind === 'bank' ? 'bank' : (t.kind === 'hawala' ? 'hawala' : 'cash'),
+          account: t.kind === 'bank' ? 'bank' : (t.kind === 'hawala' ? 'hawala' : (t.kind === 'coupon' ? 'coupon' : 'cash')),
           party_id: t.party_id ? Number(t.party_id) : null, direction: 'in', amount: amt,
           method: t.kind, ref_no: t.ref_no || null,
           source_type: 'shift', source_id: s.id, note: 'قبض ' + t.kind + ' شفت #' + s.id
@@ -297,15 +299,19 @@ route('POST', '/shifts/:id/close', 'shift', ({ user, params, b }) => {
       }
     }
 
-    const cashExpected = R(totalAmount - nonCash, 2);
+    /* پول آغاز شفت داخل کشوی صندوق است و در شمارش پایان هم شامل می‌شود. */
+    const cashSales = R(totalAmount - nonCash, 2);
+    if (cashSales < 0) throw fail(400, 'مجموع نسیه، کوپن و بانک از مجموع فروش بیشتر شده است');
+    const cashExpected = R(N(s.float_amount) + cashSales, 2);
     const cashCounted = N(b.cash_counted);
     const cashVar = R(cashCounted - cashExpected, 2);
 
-    if (cashCounted > 0 || cashExpected > 0)
+    /* در دفتر صندوق فقط فروش نقدی تازه ثبت می‌شود؛ صندوق افتتاحیه پول تازه نیست. */
+    if (cashSales > 0)
       D.addMoneyMove({
         doc_date: s.doc_date, station_id: s.station_id, account: 'cash',
-        direction: 'in', amount: cashCounted, method: 'cash',
-        source_type: 'shift', source_id: s.id, note: 'نقده شمرده شفت #' + s.id
+        direction: 'in', amount: cashSales, method: 'cash',
+        source_type: 'shift', source_id: s.id, note: 'فروش نقدی شفت #' + s.id
       }, user);
 
     D.addMoneyMove({
@@ -567,6 +573,7 @@ route('POST', '/bulk', 'ops', ({ user, b }) => {
       if (N(p.credit_limit) > 0 && bal + amount * fx > N(p.credit_limit)) {
         if (!b.override_credit) throw fail(400,
           'مشتری ' + p.name + ' از سقف اعتبار می‌گذرد (بیلانس ' + bal + ' — سقف ' + p.credit_limit + ')');
+        if (!A.can(user, 'finance')) throw fail(403, 'فقط مدیر یا مسئول مالی می‌تواند از سقف اعتبار عبور کند');
         D.raiseAlert(t.station_id, 'high', 'CREDIT_OVERRIDE',
           'عبور از سقف اعتبار در فروش عمده',
           'مشتری ' + p.name + ' — مبلغ ' + amount, 'bulk_sale', null);
