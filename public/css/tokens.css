@@ -1,0 +1,201 @@
+/* ============================================================
+   SHAFAKHANEH DESIGN SYSTEM — منبع حقیقت زبان بصری
+   Direction: RTL. Font: IRANSansWeb(FaNum) — عین پلتفرم مرجع.
+   این فایل تغییر نکند مگر با تصمیم دیزاین.
+   ============================================================ */
+
+:root {
+  /* ---------- Brand / Primary ---------- */
+  --prime-1: #0B8457;          /* CTA fill, active nav, FAB, badges */
+  --prime-1-o: #0B845730;      /* selected tab wash (~19% opacity) */
+  --prime-1-o2: #0B845780;     /* stronger wash */
+  --prime-2: #6ABBAB;          /* hover of primary, mint accent */
+  --prime-2-o: #6ABBAB30;
+  --main-color: #6CB9AB;       /* mint chip / illustration ground */
+  --secn-color: #6CB9AB33;     /* mint 20% */
+
+  /* ---------- Secondary / Semantic ---------- */
+  --prime-3: #FF4200;          /* rare accent / alert orange */
+  --prime-3-o: #FF420030;
+  --secondry-1: #d33535;       /* destructive / error */
+  --secondry-2: #0B6784;       /* headings, titles (teal-navy) */
+  --n-sec-2: #3385B3;          /* links / info */
+  --n-sec-2-o: #3385B31F;
+  --n-sec-2-o2: #3385B34F;
+  --c-main: #0047ab;           /* deep link blue */
+  --link-blue: #0094FF;        /* inline link */
+
+  /* ---------- Surfaces ---------- */
+  --background: #FCFCFC;       /* page canvas — almost white, not pure */
+  --background-1: #ffffff;
+  --n-grey-0: #FFFFFF;         /* cards */
+  --n-grey-01: #F2F2F2;        /* disabled / coming-soon wash */
+  --grey-1: #F9F9F9;           /* search field, login chip */
+  --n-bg-1: #f0f5ff;
+  --nav-bg: #ffffff;
+
+  /* ---------- Greys (border → muted text → body) ---------- */
+  --n-grey-1: #E5E5E5;         /* hairline border */
+  --n-grey-11: #CBCBCB;
+  --n-grey-2: #979797;         /* placeholder, secondary nav, icons */
+  --n-grey-3: #5E5E5E;
+  --n-grey-4: #6C6B6B;
+  --n-grey-5: #555555;
+  --text-1: #1E1E1E;           /* body */
+  --text-3: #2F2F2F;
+  --fsc-d-1: #121212;
+  --text-2: #D9D9D9;
+  --text-h: #8B6464;
+
+  /* ---------- Feedback (Fluent-like banners) ---------- */
+  --error-bg: #dff6dd;
+  --error-border: #107c10;
+  --error-bg-yellow: #fff4ce;
+  --error-border-yellow: #797775;
+  --error-bg-red: #fde7e9;
+  --error-border-red: #a80000;
+
+  /* ---------- Radius (the roundness language) ---------- */
+  --border-radius-1: 4px;      /* tiny chips */
+  --border-radius-2: 8px;      /* inputs, search, small chips */
+  --border-radius-3: 16px;     /* buttons, FAB, PWA install */
+  --border-radius-32: 24px;    /* PRIMARY card radius — use everywhere */
+  --border-radius-4: 32px;     /* hero overlap card, big shells */
+  --radius-pill: 100px;        /* segmented pills */
+
+  /* ---------- Shadows (soft, never harsh) ---------- */
+  --n-shadow-1: 0 4px 15px -6px #66666680;
+  --n-shadow-2: 0 4px 15px -6px #00000080;
+  --shadow-card: 0px 23px 40px -13px #00000014;    /* کارت — عین سایت */
+  --shadow-over: 0px 4px 50px -16px #00000028;     /* کارت روی‌نشسته هیرو */
+  --shadow-bar-top: 0px 4px 32px 0px #00000028;    /* ردیف دوم هدر */
+  --shadow-bar: 0px 4px 16px 0px #00000029;        /* bottom nav / login sheet */
+  --shadow-drop: 0px 4px 8px -2px #0000005f;       /* dropdown */
+  --shadow-footer: 0px -4px 50px -14px #00000028;
+
+  /* ---------- Type ---------- */
+  --font-fa: IRANSansWeb, Vazirmatn, "Segoe UI", Tahoma, -apple-system, sans-serif;
+  --fs-small: 10px;
+  --fs-textfield: 13px;
+  --fs-textfield-2: 16px;
+  --letter-tight: -0.18px;
+
+  /* ---------- Motion ---------- */
+  --trans-1: all .15s cubic-bezier(.5, 0, 0, 1);
+  --trans-2: all .2s ease-in-out;
+  --trans-3: all .3s ease-in-out;
+
+  /* ---------- Layout ---------- */
+  --universal-pad: 400px;      /* 1745-: 200px · 1445-: 100px · 850-: 1rem */
+  --header-h: 60px;            /* + second row ~56px */
+  --header-h-big: 80px;
+  --b-nav-h: 70px;
+  --fab-size: 50px;
+  --icon-24: 24px;
+  --icon-32: 32px;
+  --breakpoint-mobile: 850px;
+
+  /* ---------- White washes (شفافیت روی زمینه سبز/تصویری) ---------- */
+  --white-1: #ffffff;
+  --white-1-o: #ffffff30;
+  --white-1-o2: #ffffff80;
+}
+
+/* پوسته اپ — عین شل مرجع رنگ عمل را از نعنایی به سبز اصلی می‌برد */
+body {
+  --main-color: var(--prime-1);
+  --secn-color: var(--prime-1-o);
+}
+
+@media screen and (max-width: 1745px) { :root { --universal-pad: 200px; } }
+@media screen and (max-width: 1445px) { :root { --universal-pad: 100px; } }
+@media screen and (max-width: 850px)  { :root { --universal-pad: 1rem; } }
+
+/* ---------- Global rules (do not skip) ---------- */
+html, body {
+  direction: rtl;
+  margin: 0;
+  background: var(--background);
+  font-family: var(--font-fa);
+  letter-spacing: var(--letter-tight);
+  color: var(--secondry-2);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  scroll-behavior: smooth;
+}
+* { font-family: var(--font-fa) !important; box-sizing: border-box; }
+
+/* ---------- Primitive components ---------- */
+.ds-card {
+  background: var(--n-grey-0);
+  border-radius: var(--border-radius-32);
+  box-shadow: var(--shadow-card);
+  padding: 1rem;
+}
+.ds-card-lg {
+  background: var(--n-grey-0);
+  border-radius: 32px;
+  box-shadow: var(--shadow-card);
+  padding: 1.25rem 1.5rem;
+}
+.ds-btn-primary {
+  background: var(--prime-1);
+  color: #fff;
+  border: none;
+  border-radius: var(--border-radius-3);
+  padding: 0.75rem 2rem;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: var(--trans-1);
+}
+.ds-btn-primary:hover { background: var(--prime-2); }
+.ds-btn-primary:disabled { background: var(--n-grey-1); color: var(--n-grey-3); }
+.ds-btn-ghost {
+  background: var(--grey-1);
+  color: var(--n-grey-2);
+  border: 1px solid var(--n-grey-1);
+  border-radius: var(--border-radius-2);
+  padding: 4px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ds-input {
+  background: var(--grey-1);
+  border: 1px solid var(--n-grey-1);
+  border-radius: var(--border-radius-2);
+  padding: 0.5rem 1rem 0.625rem;
+  color: var(--text-1);
+  outline: none;
+}
+.ds-chip-soon {
+  border-radius: 100px;
+  background: var(--prime-1);
+  color: #fff;
+  padding: 0.1rem 0.5rem 0.3rem;
+  font-size: 0.7rem;
+}
+.ds-tab-active {
+  background: var(--prime-1-o);
+  color: var(--prime-1);
+  border-radius: var(--border-radius-2);
+}
+.ds-fab {
+  position: fixed;
+  width: 50px; height: 50px;
+  right: 20px; bottom: 20px;
+  background: var(--prime-1);
+  border-radius: 16px;
+  box-shadow: var(--n-shadow-1);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 999;
+}
+.ds-section-title {
+  color: var(--secondry-2);
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+.ds-muted { color: var(--n-grey-2); font-size: 0.9rem; font-weight: 500; }
+.ds-hairline { border: 1px solid var(--n-grey-1); }
+.ds-gap { display: flex; flex-direction: column; gap: 1rem; }

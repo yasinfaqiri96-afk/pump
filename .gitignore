@@ -1,0 +1,23 @@
+# دیتابیس محلی و فایل‌های جانبی SQLite
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# پشتیبان‌ها
+backups/
+
+# وابستگی‌ها
+node_modules/
+
+# سیستم / ویرایشگر
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# لاگ‌ها و محیط
+*.log
+.env
+.env.*
