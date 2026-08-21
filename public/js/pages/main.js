@@ -3,9 +3,10 @@
   'use strict';
 
   const q = () => (S.stationId ? { station_id: S.stationId } : {});
+  const stationId = () => S.stationId || (S.meta.stations[0] && S.meta.stations[0].id);
 
   /* ============================================================
-     داشبورد
+     داشبورد — فقط چیزی که مالک در چند ثانیه باید بفهمد
      ============================================================ */
   page('dashboard', async function (view) {
     const d = await API.get('/reports/dashboard', q());
@@ -38,6 +39,9 @@
             <span class="muted-s">${t.last_dip_at ? 'آخرین دیپ: ' + dt(t.last_dip_at) : 'دیپ ثبت نشده'}</span>
             ${varChip}
           </div>
+          ${t.consigned_l > 0 ? h`<div class="row-b">
+            <span class="muted-s">مال خود ما</span>
+            <span class="muted-s">${L(t.owned_l)} · امانتی ${L(t.consigned_l)}</span></div>` : ''}
         </div>`;
     }).join('') : UI.empty('هیچ تانکی ثبت نشده است',
       h`<button class="btn btn-primary" data-go-setup>ثبت اولین تانک</button>`);
@@ -78,13 +82,15 @@
           ${UI.stat(L(d.today_liters), 'فروش امروز (لیتر)')}
           ${UI.stat(money(d.today_amount), 'فروش امروز (' + S.meta.base_currency + ')')}
           ${UI.stat(money(d.cash), 'موجودی صندوق')}
-          ${UI.stat(money(d.receivable), 'طلبات از مشتریان', null, d.receivable > 0 ? '' : '')}
+          ${UI.stat(money(d.receivable), 'طلبات از مشتریان')}
         </div>
 
         ${d.open_shifts.length ? h`<div class="card">
           ${UI.banner('warn', 'شفت باز: ' + d.open_shifts.map(s => esc(s.operator_name) + ' — از ' + timeOf(s.opened_at)).join(' ، ')
         + ' &nbsp; <span class="link" data-go-shifts>رفتن به شفت</span>')}
-        </div>` : ''}
+        </div>` : (d.day_closed ? h`<div class="card">
+          ${UI.banner('ok', 'روز امروز بسته شده است.')}
+        </div>` : '')}
 
         <div class="grid-main">
           <div class="stack">
@@ -131,13 +137,19 @@
               <div class="row-b"><span class="muted">بانک و حواله</span><span class="num-strong">${money(d.bank)}</span></div>
               <div class="row-b"><span class="muted">طلبات</span><span class="num-strong pos">${money(d.receivable)}</span></div>
               <div class="row-b"><span class="muted">قروض</span><span class="num-strong neg">${money(d.payable)}</span></div>
+              ${d.today_credit > 0 ? h`<div class="hair"></div>
+                <div class="row-b"><span class="muted">فروش قرضی امروز</span>
+                  <span class="num-strong">${money(d.today_credit)}</span></div>` : ''}
             </div>
           </div>
         </div>
       </div>`;
 
     view.querySelectorAll('[data-tank]').forEach(c => c.onclick = () => go('#/tanks/' + c.dataset.tank));
-    const map = { 'data-go-tanks': 'tanks', 'data-go-prices': 'prices', 'data-go-alerts': 'alerts', 'data-go-setup': 'setup', 'data-go-shifts': 'shifts' };
+    const map = {
+      'data-go-tanks': 'tanks', 'data-go-prices': 'prices', 'data-go-alerts': 'alerts',
+      'data-go-setup': 'setup', 'data-go-shifts': 'shifts'
+    };
     Object.keys(map).forEach(k => view.querySelectorAll('[' + k + ']').forEach(b => b.onclick = () => go('#/' + map[k])));
   });
 
@@ -183,15 +195,19 @@
         </div>
         <div class="tank-meta">
           <div><div class="meta-k">ظرفیت</div><div class="meta-v">${L(t.capacity_l)}</div></div>
-          <div><div class="meta-k">بهای تمام‌شده</div><div class="meta-v">${n(t.wac, 2)}</div></div>
+          <div><div class="meta-k">بهای هر لیتر</div><div class="meta-v">${n(t.wac, 2)}</div></div>
           <div><div class="meta-k">آخرین دیپ</div><div class="meta-v" style="font-size:.8rem">${t.last_dip_at ? sh(t.last_dip_at) : '—'}</div></div>
         </div>
       </div>`;
   }
 
   async function tankDetail(view, id) {
-    const t = await API.get('/tanks/' + id);
+    const [t, transfers] = await Promise.all([
+      API.get('/tanks/' + id),
+      API.get('/transfers', { tank_id: id, limit: 20 })
+    ]);
     const pct2 = Math.max(0, Math.min(100, t.fill_pct));
+
     const moves = t.recent_moves.length ? h`
       <div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>تاریخ</th><th>نوع</th><th class="num">ورودی</th><th class="num">خروجی</th><th>شرح</th></tr></thead>
@@ -246,6 +262,13 @@
                 <div class="stat"><div class="stat-num sm">${n(t.wac, 2)}</div><div class="stat-lbl">بهای هر ${esc(t.uom)}</div></div>
                 <div class="stat"><div class="stat-num sm">${fa(t.calib_points)}</div><div class="stat-lbl">نقاط سنجش</div></div>
               </div>
+              ${t.consigned && t.consigned.length ? h`
+                <div class="hair"></div>
+                <div class="row-b"><span class="muted">مال خود ما</span>
+                  <span class="num-strong">${L(t.owned_l)} ${esc(t.uom)}</span></div>
+                ${t.consigned.map(c => h`<div class="row-b">
+                  <span class="muted">امانتی ${esc(c.party_name)}</span>
+                  <span class="num-strong">${L(c.qty_l)} ${esc(t.uom)}</span></div>`).join('')}` : ''}
             </div>
 
             <div class="card stack">
@@ -255,21 +278,34 @@
             <div class="card stack">
               <div class="card-title">حرکت موجودی</div><div class="hair"></div>${moves}
             </div>
+
+            ${transfers.length ? h`<div class="card stack">
+              <div class="card-title">انتقال‌های اخیر</div><div class="hair"></div>
+              <div class="tbl-wrap"><table class="tbl">
+                <thead><tr><th>تاریخ</th><th>از</th><th>به</th><th class="num">لیتر</th><th>وضعیت</th></tr></thead>
+                <tbody>${transfers.map(x => h`<tr>
+                  <td>${sh(x.doc_date)}</td><td>${esc(x.from_code)}</td><td>${esc(x.to_code)}</td>
+                  <td class="num">${L(x.qty_l)}</td>
+                  <td>${x.status === 'posted' ? 'ثبت شده' : (x.status === 'reversed' ? 'برگشت خورده' : 'سند برگشت')}
+                    ${x.status === 'posted' && can('ops') ? h` <button class="link" data-trrev="${x.id}"
+                      style="border:0;background:0;font-size:.8rem">برگشت</button>` : ''}</td>
+                </tr>`).join('')}</tbody></table></div>
+            </div>` : ''}
           </div>
 
           <div class="stack">
             <div class="card stack-s">
               <div class="card-title">عملیات</div><div class="hair"></div>
               ${can('dip') ? h`<button class="btn btn-primary btn-block" data-dip>ثبت دیپ</button>` : ''}
-              ${can('ops') ? h`<button class="btn-ghost w-100" data-recv style="justify-content:center">ثبت تخلیه</button>` : ''}
-              ${can('ops') ? h`<button class="btn-ghost w-100" data-adj style="justify-content:center">تعدیل / مصرف جنراتور</button>` : ''}
-              ${can('ops') ? h`<button class="btn-ghost w-100" data-tr style="justify-content:center">انتقال به تانک دیگر</button>` : ''}
+              ${can('ops') ? h`<button class="btn-ghost w-100" data-recv style="justify-content:center">ثبت ورود تیل</button>` : ''}
+              ${can('ops') ? h`<button class="btn-ghost w-100" data-tr style="justify-content:center">انتقال تیل</button>` : ''}
+              ${can('ops') ? h`<button class="btn-ghost w-100" data-adj style="justify-content:center">اصلاح موجودی / جنراتور</button>` : ''}
               <button class="btn-ghost w-100" data-card style="justify-content:center">دفتر موجودی</button>
             </div>
             ${can('setup') ? h`<div class="card stack-s">
               <div class="card-title">جدول سنجش</div><div class="hair"></div>
               <div class="muted-s">${t.calib_points ? fa(t.calib_points) + ' نقطه ثبت شده' : 'ثبت نشده — دیپ کار نمی‌کند'}</div>
-              <button class="btn-ghost w-100" data-calib style="justify-content:center">بارگذاری جدول</button>
+              <button class="btn-ghost w-100" data-calib style="justify-content:center">جدول سنجش و تاریخچه</button>
             </div>` : ''}
           </div>
         </div>
@@ -283,11 +319,13 @@
     on('[data-tr]', () => window.TransferForm(t));
     on('[data-calib]', () => window.CalibForm(t));
     on('[data-card]', () => go('#/reports?r=stockcard&tank=' + t.id));
+    view.querySelectorAll('[data-trrev]').forEach(b => b.onclick = () =>
+      window.ReverseForm('/transfers/' + b.dataset.trrev + '/reverse', 'برگشت انتقال تیل'));
   }
 
   const SRC = window.SRC = {
-    opening: 'افتتاحیه', receipt: 'تخلیه', shift: 'فروش شفت', bulk_sale: 'فروش عمده',
-    transfer: 'انتقال', adjust: 'تعدیل', genset: 'جنراتور', test_return: 'برگشت تست'
+    opening: 'افتتاحیه', receipt: 'ورود تیل', shift: 'فروش شفت', bulk_sale: 'فروش عمده',
+    transfer: 'انتقال', adjust: 'اصلاح موجودی', genset: 'جنراتور', test_return: 'برگشت تست'
   };
 
   /* ============================================================
@@ -362,16 +400,17 @@
           ${UI.field('دیپ (میلی‌متر)', UI.input('dip_mm', { type: 'number', cls: 'big', ph: '0' }))}
           ${UI.field('دیپ آب (میلی‌متر)', UI.input('water_mm', { type: 'number', value: 0 }))}
         </div>
-        <div class="grid-2 keep">
-          ${UI.field('درجه حرارت (°C)', UI.input('temp_c', { type: 'number', ph: '25' }))}
-          ${UI.field('دانسیته 15°', UI.input('density15', { type: 'number', ph: 'خودکار' }))}
-        </div>
-        ${UI.field('نوع', UI.select('kind', [
+        <div id="dipPrev"></div>
+        ${UI.more('جزئیات بیشتر', h`
+          <div class="grid-2 keep">
+            ${UI.field('درجه حرارت (°C)', UI.input('temp_c', { type: 'number', ph: '25' }))}
+            ${UI.field('ثقلت', UI.input('density15', { type: 'number', ph: 'خودکار' }))}
+          </div>
+          ${UI.field('نوع', UI.select('kind', [
       { v: 'spot', t: 'دیپ عادی' }, { v: 'open', t: 'افتتاحیه شفت' },
       { v: 'close', t: 'اختتامیه شفت' }, { v: 'pre_unload', t: 'قبل تخلیه' },
       { v: 'post_unload', t: 'بعد تخلیه' }], kind || 'spot'))}
-        ${UI.field('توضیح', UI.input('note', { ph: 'اختیاری' }))}
-        <div id="dipPrev"></div>
+          ${UI.field('توضیح', UI.input('note', { ph: 'اختیاری' }))}`)}
         <button class="btn btn-primary btn-block" type="submit">ثبت دیپ</button>
       </form>`);
 
@@ -379,43 +418,38 @@
     let timer = null;
     async function preview() {
       const d = readForm(f);
-      if (!d.dip_mm) { document.getElementById('dipPrev').innerHTML = ''; return; }
+      if (!d.dip_mm) { f.querySelector('#dipPrev').innerHTML = ''; return; }
       try {
         const p = await API.get('/dips/preview', {
           tank_id: d.tank_id, dip_mm: d.dip_mm, water_mm: d.water_mm || 0,
           temp_c: d.temp_c || 15, density15: d.density15 || ''
         });
         const cls = p.over_tolerance ? 'error' : (Math.abs(p.variance_pct) > 0.1 ? 'warn' : 'ok');
-        document.getElementById('dipPrev').innerHTML = h`
+        f.querySelector('#dipPrev').innerHTML = h`
           <div class="card card-flat stack-s">
             <div class="grid-3 keep">
-              <div class="stat"><div class="stat-num sm">${L(p.net)}</div><div class="stat-lbl">حجم خالص</div></div>
+              <div class="stat"><div class="stat-num sm">${L(p.net)}</div><div class="stat-lbl">حجم واقعی</div></div>
               <div class="stat"><div class="stat-num sm">${L(p.book_l)}</div><div class="stat-lbl">موجودی دفتری</div></div>
               <div class="stat"><div class="stat-num sm ${p.variance_l < 0 ? 'neg' : 'pos'}">${L(p.variance_l)}</div><div class="stat-lbl">کسری / ازدیاد</div></div>
             </div>
-            <div class="muted-s txt-c">پرشدگی ${fa(p.fill_pct)}٪ · ضریب VCF ${fa(p.vcf)} · حجم 15° ${L(p.vol15)}
+            <div class="muted-s txt-c">پرشدگی ${fa(p.fill_pct)}٪ · حجم اصلاح‌شده ${L(p.vol15)} لیتر
               ${p.water > 0 ? ' · آب ' + L(p.water) : ''}</div>
             ${UI.banner(cls, p.over_tolerance
-            ? 'کسری ' + pct(p.variance_pct) + ' از تولرانس ' + pct(p.tolerance_pct) + ' گذشته — بعد از ثبت هشدار ایجاد می‌شود.'
+            ? 'کسری ' + pct(p.variance_pct) + ' از حد مجاز ' + pct(p.tolerance_pct) + ' گذشته — بعد از ثبت هشدار ایجاد می‌شود.'
             : 'کسری ' + pct(p.variance_pct) + ' — در حد مجاز.')}
           </div>`;
-      } catch (e) { document.getElementById('dipPrev').innerHTML = UI.banner('error', esc(e.message)); }
+      } catch (e) { f.querySelector('#dipPrev').innerHTML = UI.banner('error', esc(e.message)); }
     }
     f.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(preview, 220); });
     f.querySelector('[name=tank_id]').addEventListener('change', preview);
 
-    f.onsubmit = async ev => {
-      ev.preventDefault();
-      const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
-      try {
-        const d = readForm(f);
-        if (shiftId) d.shift_id = shiftId;
-        const r = await API.post('/dips', d);
-        closeSheet();
-        ok('دیپ ثبت شد — کسری ' + L(r.variance_l) + ' لیتر');
-        render();
-      } catch (e) { err(e.message); btn.disabled = false; }
-    };
+    onSubmit(f, async d => {
+      if (shiftId) d.shift_id = shiftId;
+      const r = await API.post('/dips', d);
+      closeSheet();
+      ok('دیپ ثبت شد — کسری ' + L(r.variance_l) + ' لیتر');
+      render();
+    });
   };
 
   window.QuickDip = () => window.DipForm();
@@ -446,6 +480,7 @@
             </div>
             <div class="row">
               <button class="btn btn-primary" data-close-shift="${s.id}">بستن شفت</button>
+              ${can('shift') ? h`<button class="btn-ghost" data-ticket="${s.id}">فروش قرضی</button>` : ''}
               <button class="btn-ghost" data-view="${s.id}">جزئیات</button>
             </div>
           </div>`).join('')}</div>` : ''}
@@ -476,54 +511,130 @@
     view.querySelectorAll('[data-view]').forEach(b => b.onclick = () => go('#/shifts/' + b.dataset.view));
     view.querySelectorAll('[data-close-shift]').forEach(b =>
       b.onclick = e => { e.stopPropagation(); CloseShiftForm(Number(b.dataset.closeShift)); });
+    view.querySelectorAll('[data-ticket]').forEach(b =>
+      b.onclick = e => { e.stopPropagation(); CreditTicketForm(Number(b.dataset.ticket)); });
   });
 
   async function OpenShiftForm() {
-    const stationId = S.stationId || (S.meta.stations[0] && S.meta.stations[0].id);
-    if (!stationId) return err('استیشن را انتخاب کنید');
+    const st = stationId();
+    if (!st) return err('استیشن را انتخاب کنید');
     const [ops, nozzles] = await Promise.all([
       API.get('/parties', { kind: 'employee' }),
-      API.get('/nozzles', { station_id: stationId })
+      API.get('/nozzles', { station_id: st })
     ]);
-    if (!ops.length) return err('اول اپراتور را در بخش مشتریان/کارمندان ثبت کنید');
+    if (!ops.length) return err('اول اپراتور را در بخش مشتریان ← کارمندان ثبت کنید');
     if (!nozzles.length) return err('برای این استیشن نازل ثبت نشده است');
 
     const ov = sheet('باز کردن شفت', h`
       <form id="osF" class="stack">
-        ${UI.field('اپراتور', UI.select('operator_id', ops.map(o => ({ v: o.id, t: o.name })), ops[0].id))}
-        ${UI.field('صندوق افتتاحیه', UI.input('float_amount', { type: 'number', value: 0 }))}
-        ${UI.dateField('تاریخ', 'doc_date')}
+        <div class="grid-2 keep">
+          ${UI.field('اپراتور', UI.select('operator_id', ops.map(o => ({ v: o.id, t: o.name })), ops[0].id))}
+          ${UI.field('صندوق افتتاحیه', UI.input('float_amount', { type: 'number', value: 0 }))}
+        </div>
         <div class="hair"></div>
-        <div class="card-title">قرائت ابتدایی نازل‌ها</div>
-        <div class="muted-s">عدد کنتور هر نازل در شروع شفت. پیش‌فرض = آخرین قرائت ثبت‌شده.</div>
+        <div class="card-title">ریدینگ ابتدایی نازل‌ها</div>
+        <div class="muted-s">عدد کنتور هر نازل در شروع شفت. پیش‌فرض = آخرین ریدینگ ثبت‌شده.</div>
         <div class="stack-s">
           ${nozzles.map(nz => h`<div class="row-b card card-flat card-tight">
             <div>
-              <div class="drow-t">${esc(nz.dispenser_code)} / ${esc(nz.code)}</div>
+              <div class="drow-t" style="font-size:1rem">${esc(nz.dispenser_code)} / ${esc(nz.code)}</div>
               <div class="muted-s">${esc(nz.product_name)} · تانک ${esc(nz.tank_code)}</div>
             </div>
             <input class="input" style="max-width:170px" data-num name="nz_${nz.id}"
               value="${fa(nz.last_reading)}" inputmode="decimal">
           </div>`).join('')}
         </div>
+        ${UI.more('جزئیات بیشتر', UI.dateField('تاریخ', 'doc_date'))}
         <button class="btn btn-primary btn-block" type="submit">باز کردن شفت</button>
       </form>`, { wide: true });
 
-    ov.querySelector('#osF').onsubmit = async ev => {
-      ev.preventDefault();
-      const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true;
-      try {
-        const d = readForm(ev.target);
-        const list = nozzles.map(nz => ({ nozzle_id: nz.id, opening: num(d['nz_' + nz.id]) }));
-        await API.post('/shifts/open', {
-          station_id: stationId, operator_id: d.operator_id,
-          float_amount: d.float_amount, doc_date: d.doc_date, nozzles: list
-        });
-        closeSheet(); ok('شفت باز شد'); render();
-      } catch (e) { err(e.message); btn.disabled = false; }
-    };
+    onSubmit(ov.querySelector('#osF'), async d => {
+      const list = nozzles.map(nz => ({ nozzle_id: nz.id, opening: num(d['nz_' + nz.id]) }));
+      await API.post('/shifts/open', {
+        idem_key: d.idem_key, station_id: st, operator_id: d.operator_id,
+        float_amount: d.float_amount, doc_date: d.doc_date, nozzles: list
+      });
+      closeSheet(); ok('شفت باز شد'); render();
+    });
   }
 
+  /* ---------- فروش قرضی از نازل ---------- */
+  async function CreditTicketForm(shiftId) {
+    const [custs, nozzles] = await Promise.all([
+      API.get('/parties', { kind: 'customer' }),
+      API.get('/nozzles', { station_id: stationId() })
+    ]);
+    if (!custs.length) return err('اول مشتری را ثبت کنید');
+
+    const ov = sheet('ثبت فروش قرضی', h`
+      <form id="ctF" class="stack">
+        ${UI.field('مشتری', UI.select('party_id', custs.map(c => ({
+      v: c.id, t: c.name + ' (طلب ' + money(c.balance) + ')'
+    })), custs[0].id))}
+        ${UI.field('موتر', h`<select class="input" name="vehicle_id"><option value="">— بدون موتر —</option></select>`)}
+        ${UI.field('نازل', UI.select('nozzle_id', nozzles.map(n => ({
+      v: n.id, t: n.dispenser_code + '/' + n.code + ' — ' + n.product_name
+    })), nozzles[0] && nozzles[0].id))}
+        <div class="grid-2 keep">
+          ${UI.field('مقدار (لیتر)', UI.input('qty_l', { type: 'number', cls: 'big' }))}
+          ${UI.field('نرخ هر لیتر', UI.input('unit_price', { type: 'number', ph: 'نرخ‌نامه' }))}
+        </div>
+        <div class="card card-flat">
+          <div class="row-b"><span class="muted">مبلغ</span>
+            <span class="stat-num sm" id="ctAmt">0</span></div>
+        </div>
+        ${UI.more('جزئیات بیشتر', h`
+          ${UI.field('شماره بلیت', UI.input('ticket_no'))}
+          ${UI.field('نام راننده', UI.input('driver_name'))}
+          ${UI.field('توضیح', UI.input('note'))}`)}
+        ${UI.banner('info', 'لیتر این بلیت قبلاً در کنتور نازل حساب شده است. '
+      + 'این بلیت فقط مشخص می‌کند این بخش از فروش شفت نقد نیست، بلکه طلب مشتری است.')}
+        <button class="btn btn-primary btn-block" type="submit">ثبت فروش قرضی</button>
+      </form>`);
+
+    const f = ov.querySelector('#ctF');
+    const vsel = f.querySelector('[name=vehicle_id]');
+    async function loadVehicles() {
+      const d = readForm(f);
+      const vs = await API.get('/vehicles', { party_id: d.party_id });
+      vsel.innerHTML = '<option value="">— بدون موتر —</option>'
+        + vs.map(v => h`<option value="${v.id}">${esc(v.plate_no)}${v.kind ? ' — ' + esc(v.kind) : ''}</option>`).join('');
+    }
+    function calc() {
+      const d = readForm(f);
+      const nz = nozzles.find(x => String(x.id) === String(d.nozzle_id));
+      let price = num(d.unit_price);
+      if (!price && nz) {
+        const p = (S.meta.products || []).find(x => x.id === nz.product_id);
+        price = p ? num((S.prices || {})[p.id]) : 0;
+      }
+      f.querySelector('#ctAmt').textContent = money(num(d.qty_l) * price);
+    }
+    f.querySelector('[name=party_id]').addEventListener('change', loadVehicles);
+    f.addEventListener('input', calc);
+    loadVehicles();
+
+    onSubmit(f, async d => {
+      d.shift_id = shiftId;
+      d.station_id = stationId();
+      try {
+        const r = await API.post('/credit-tickets', d);
+        closeSheet(); ok('فروش قرضی ثبت شد — ' + money(r.amount)); render();
+      } catch (e) {
+        if (/سقف اعتبار/.test(e.message) && can('finance')) {
+          const yes = await confirmBox('عبور از سقف اعتبار', e.message + '  ادامه می‌دهید؟', true);
+          if (!yes) throw e;
+          d.override_credit = true;
+          d.override_reason = 'تایید مدیر هنگام فروش قرضی';
+          const r = await API.post('/credit-tickets', d);
+          closeSheet(); ok('ثبت شد — هشدار ایجاد شد'); render();
+        } else throw e;
+      }
+    });
+  }
+  window.CreditTicketForm = CreditTicketForm;
+
+  /* ---------- بستن شفت ---------- */
   async function CloseShiftForm(shiftId) {
     const s = await API.get('/shifts/' + shiftId);
     const customers = await API.get('/parties', { kind: 'customer' });
@@ -532,40 +643,60 @@
       <form id="csF" class="stack">
         <div class="card card-flat stack-s">
           <div class="muted-s">شروع: ${dt(s.opened_at)} · صندوق افتتاحیه: ${money(s.float_amount)}</div>
+          ${s.checkpoints.length ? h`<div class="muted-s">نرخ در این شفت ${fa(s.checkpoints.length)} بار تغییر کرده —
+            فروش خودکار به بخش‌های نرخ تقسیم می‌شود.</div>` : ''}
         </div>
 
-        <div class="card-title">قرائت اخیر نازل‌ها</div>
+        <div class="card-title">ریدینگ اخیر نازل‌ها</div>
         <div class="stack-s" id="nzRows">
           ${s.readings.map(r2 => h`
             <div class="card card-flat card-tight stack-s" data-nz="${r2.nozzle_id}">
               <div class="row-b">
                 <div>
-                  <div class="drow-t">${esc(r2.dispenser_code)} / ${esc(r2.nozzle_code)}</div>
+                  <div class="drow-t" style="font-size:1rem">${esc(r2.dispenser_code)} / ${esc(r2.nozzle_code)}</div>
                   <div class="muted-s">${esc(r2.product_name)} · نرخ ${money(r2.price)}</div>
                 </div>
                 <div class="txt-e">
-                  <div class="meta-k">قرائت ابتدایی</div>
+                  <div class="meta-k">ریدینگ ابتدایی</div>
                   <div class="meta-v">${fa(r2.opening)}</div>
                 </div>
               </div>
-              <div class="grid-3 keep">
-                ${UI.field('قرائت اخیر', UI.input('cl_' + r2.nozzle_id, { type: 'number', ph: '0' }))}
-                ${UI.field('برگشت تست (لیتر)', UI.input('tr_' + r2.nozzle_id, { type: 'number', value: 0 }))}
-                ${UI.field('چرخش کنتور', UI.input('ro_' + r2.nozzle_id, { type: 'number', value: 0 }))}
-              </div>
+              ${UI.field('ریدینگ اخیر', UI.input('cl_' + r2.nozzle_id, { type: 'number', cls: 'big', ph: '0' }))}
               <div class="field-calc" data-calc="${r2.nozzle_id}">—</div>
+              ${UI.more('برگشت تست و چرخش کنتور', h`
+                <div class="grid-2 keep">
+                  ${UI.field('برگشت تست (لیتر)', UI.input('tr_' + r2.nozzle_id, { type: 'number', value: 0 }))}
+                  ${UI.field('چرخش کنتور', UI.input('ro_' + r2.nozzle_id, { type: 'number', value: 0 }),
+        'اگر کنتور از ۹۹۹۹۹۹ گذشته')}
+                </div>`)}
             </div>`).join('')}
         </div>
 
         <div class="hair"></div>
-        <div class="card-title">تفکیک قبض</div>
+        <div class="card-title">پول شفت</div>
         <div class="muted-s">هر چه نقده نیست این‌جا ثبت شود. باقی‌مانده = نقده.</div>
+
+        ${s.credit_tickets.length ? h`<div class="card card-flat stack-s">
+          <div class="row-b">
+            <span class="body-1">فروش قرضی این شفت</span>
+            <span class="num-strong">${money(s.credit_total)}</span>
+          </div>
+          <div class="hair"></div>
+          ${s.credit_tickets.map(t => h`<div class="row-b">
+            <span class="muted-s">${esc(t.party_name)}${t.plate_no ? ' — ' + esc(t.plate_no) : ''} · ${L(t.qty_l)} لیتر</span>
+            <span class="muted-s">${money(t.amount)}</span></div>`).join('')}
+          <div class="muted-s">این مبلغ خودکار از نقده مورد انتظار کم می‌شود.</div>
+        </div>` : ''}
+
         <div class="grid-2">
-          ${UI.field('فروش نسیه', UI.input('credit_amount', { type: 'number', value: 0 }))}
-          ${UI.field('مشتری نسیه', UI.select('credit_party', customers.map(c => ({ v: c.id, t: c.name })), '', { blank: '— انتخاب —' }))}
           ${UI.field('کوپن', UI.input('coupon_amount', { type: 'number', value: 0 }))}
           ${UI.field('بانک / حواله', UI.input('bank_amount', { type: 'number', value: 0 }))}
         </div>
+        ${UI.more('نسیه بدون بلیت (مشتری بدون موتر)', h`
+          <div class="grid-2 keep">
+            ${UI.field('مبلغ نسیه', UI.input('credit_amount', { type: 'number', value: 0 }))}
+            ${UI.field('مشتری', UI.select('credit_party', customers.map(c => ({ v: c.id, t: c.name })), '', { blank: '— انتخاب —' }))}
+          </div>`)}
 
         <div class="hair"></div>
         <div class="grid-2 keep">
@@ -582,23 +713,54 @@
       </form>`, { wide: true });
 
     const f = ov.querySelector('#csF');
+
+    /* فروش هر نازل — همان منطق سرور: تقسیم بین بازه‌های نرخ */
+    function soldOf(r2, d) {
+      const cl = num(d['cl_' + r2.nozzle_id]);
+      const tr = num(d['tr_' + r2.nozzle_id]);
+      const ro = num(d['ro_' + r2.nozzle_id]);
+      const factor = num(r2.meter_factor_used) || num(r2.meter_factor) || 1;
+      const mine = s.checkpoints.filter(c => c.product_id === r2.product_id);
+
+      /* مرزها: قرائت ابتدایی → ریدینگ هر نقطه کنترل → ریدینگ اخیر */
+      const points = [{ value: num(r2.opening), rollovers: 0, price: null }];
+      mine.forEach(c => {
+        const rr = (c.readings || []).find(x => x.nozzle_id === r2.nozzle_id);
+        points.push({
+          value: rr ? num(rr.reading) : num(r2.opening),
+          rollovers: rr ? num(rr.rollovers) : 0,
+          price: num(c.new_price)
+        });
+      });
+      points.push({ value: cl, rollovers: ro, price: null });
+
+      const firstPrice = mine.length ? num(mine[0].old_price) : num(r2.price);
+      let sold = 0, amount = 0;
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        const isLast = i === points.length - 1;
+        const price = a.price === null ? firstPrice : a.price;
+        const seg = Petro.nozzleSold(a.value, b.value, r2.meter_digits,
+          b.rollovers, isLast ? tr : 0, factor);
+        sold += seg; amount += seg * price;
+      }
+      return { sold, amount, parts: mine.length ? mine.length + 1 : 0 };
+    }
+
     function recalc() {
       const d = readForm(f);
       let total = 0;
       s.readings.forEach(r2 => {
-        const cl = num(d['cl_' + r2.nozzle_id]);
-        const tr = num(d['tr_' + r2.nozzle_id]);
-        const ro = num(d['ro_' + r2.nozzle_id]);
         const cell = f.querySelector('[data-calc="' + r2.nozzle_id + '"]');
         if (!d['cl_' + r2.nozzle_id]) { cell.textContent = '—'; return; }
-        const sold = Petro.nozzleSold(num(r2.opening), cl, r2.meter_digits, ro, tr, r2.meter_factor);
-        const amt = sold * num(r2.price);
-        total += amt;
-        cell.innerHTML = sold < 0
-          ? '<span class="neg">قرائت اشتباه است</span>'
-          : 'فروش ' + L(sold) + ' لیتر = ' + money(amt) + ' ' + S.meta.base_currency;
+        const x = soldOf(r2, d);
+        total += x.amount;
+        cell.innerHTML = x.sold < 0
+          ? '<span class="neg">ریدینگ اشتباه است</span>'
+          : 'فروش ' + L(x.sold) + ' لیتر = ' + money(x.amount) + ' ' + S.meta.base_currency
+          + (x.parts ? ' <span class="muted-s">(' + fa(x.parts) + ' بخش نرخ)</span>' : '');
       });
-      const nonCash = num(d.credit_amount) + num(d.coupon_amount) + num(d.bank_amount);
+      const nonCash = num(d.credit_amount) + num(d.coupon_amount) + num(d.bank_amount) + num(s.credit_total);
       const expected = total - nonCash;
       const counted = num(d.cash_counted);
       f.querySelector('#sumSale').textContent = money(total);
@@ -616,27 +778,28 @@
     f.addEventListener('input', recalc);
     recalc();
 
-    f.onsubmit = async ev => {
-      ev.preventDefault();
-      const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
-      try {
-        const d = readForm(f);
-        const readings = s.readings.map(r2 => ({
-          nozzle_id: r2.nozzle_id, closing: num(d['cl_' + r2.nozzle_id]),
+    onSubmit(f, async d => {
+      /* خانه خالی نباید بی‌صدا صفر شود — صفر یعنی چرخش کامل کنتور */
+      const readings = s.readings.map(r2 => {
+        const raw = String(d['cl_' + r2.nozzle_id] === undefined ? '' : d['cl_' + r2.nozzle_id]).trim();
+        if (raw === '') throw new Error('ریدینگ اخیر نازل '
+          + r2.dispenser_code + '/' + r2.nozzle_code + ' را وارد کنید');
+        return {
+          nozzle_id: r2.nozzle_id, closing: raw,
           test_return_l: num(d['tr_' + r2.nozzle_id]), rollovers: num(d['ro_' + r2.nozzle_id])
-        }));
-        const tenders = [];
-        if (num(d.credit_amount) > 0) tenders.push({ kind: 'credit', party_id: d.credit_party, amount: num(d.credit_amount) });
-        if (num(d.coupon_amount) > 0) tenders.push({ kind: 'coupon', amount: num(d.coupon_amount) });
-        if (num(d.bank_amount) > 0) tenders.push({ kind: 'bank', amount: num(d.bank_amount) });
-        const res = await API.post('/shifts/' + shiftId + '/close', {
-          readings, tenders, cash_counted: num(d.cash_counted), note: d.note
-        });
-        closeSheet();
-        ok('شفت بسته شد — فروش ' + L(res.total_liters) + ' لیتر');
-        render();
-      } catch (e) { err(e.message); btn.disabled = false; }
-    };
+        };
+      });
+      const tenders = [];
+      if (num(d.credit_amount) > 0) tenders.push({ kind: 'credit', party_id: d.credit_party, amount: num(d.credit_amount) });
+      if (num(d.coupon_amount) > 0) tenders.push({ kind: 'coupon', amount: num(d.coupon_amount) });
+      if (num(d.bank_amount) > 0) tenders.push({ kind: 'bank', amount: num(d.bank_amount) });
+      const res = await API.post('/shifts/' + shiftId + '/close', {
+        idem_key: d.idem_key, readings, tenders, cash_counted: num(d.cash_counted), note: d.note
+      });
+      closeSheet();
+      ok('شفت بسته شد — فروش ' + L(res.total_liters) + ' لیتر');
+      render();
+    });
   }
   window.CloseShiftForm = CloseShiftForm;
 
@@ -659,6 +822,12 @@
           ${UI.stat(money(s.cash_variance), 'کسر / اضافه صندوق', null, s.cash_variance < 0 ? 'neg' : (s.cash_variance > 0 ? 'pos' : ''))}
         </div>
 
+        ${s.status === 'open' && can('shift') ? h`<div class="row no-print">
+          <button class="btn btn-primary" data-close>بستن این شفت</button>
+          <button class="btn-ghost" data-ticket>ثبت فروش قرضی</button>
+          ${can('finance') ? h`<button class="btn-ghost" data-price>تغییر نرخ در این شفت</button>` : ''}
+        </div>` : ''}
+
         <div class="card stack">
           <div class="card-title">نازل‌ها</div><div class="hair"></div>
           <div class="tbl-wrap"><table class="tbl">
@@ -678,6 +847,37 @@
               <td class="num">${money(s.total_amount)}</td></tr></tfoot>
           </table></div>
         </div>
+
+        ${s.checkpoints.length ? h`<div class="card stack">
+          <div class="card-title">تغییر نرخ در جریان شفت</div><div class="hair"></div>
+          ${s.checkpoints.map(c => h`<div class="row-b">
+            <span class="body-1">${esc(c.product_name)} — ${timeOf(c.at)}</span>
+            <span class="num-strong">${money(c.old_price)} ← ${money(c.new_price)}</span>
+          </div>`).join('')}
+          ${s.segments.length ? h`<div class="hair"></div>
+            <div class="tbl-wrap"><table class="tbl">
+              <thead><tr><th>نازل</th><th class="num">از</th><th class="num">تا</th>
+                <th class="num">لیتر</th><th class="num">نرخ</th><th class="num">مبلغ</th></tr></thead>
+              <tbody>${s.segments.map(g => h`<tr>
+                <td>${esc(g.nozzle_code)}</td><td class="num">${fa(g.opening)}</td>
+                <td class="num">${fa(g.closing)}</td><td class="num">${L(g.sold_l)}</td>
+                <td class="num">${money(g.price)}</td><td class="num">${money(g.amount)}</td>
+              </tr>`).join('')}</tbody></table></div>` : ''}
+        </div>` : ''}
+
+        ${s.credit_tickets.length ? h`<div class="card stack">
+          <div class="card-title">فروش قرضی</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>مشتری</th><th>موتر</th><th>محصول</th><th class="num">لیتر</th>
+              <th class="num">نرخ</th><th class="num">مبلغ</th></tr></thead>
+            <tbody>${s.credit_tickets.map(t => h`<tr>
+              <td>${esc(t.party_name)}</td><td>${esc(t.plate_no || '—')}</td>
+              <td>${esc(t.product_name || '—')}</td><td class="num">${L(t.qty_l)}</td>
+              <td class="num">${money(t.unit_price)}</td><td class="num">${money(t.amount)}</td>
+            </tr>`).join('')}</tbody>
+            <tfoot><tr><td colspan="5">مجموع</td><td class="num">${money(s.credit_total)}</td></tr></tfoot>
+          </table></div>
+        </div>` : ''}
 
         ${s.tenders.length ? h`<div class="card stack">
           <div class="card-title">تفکیک قبض</div><div class="hair"></div>
@@ -699,12 +899,26 @@
               <td class="num ${x.variance_l < 0 ? 't-neg' : ''}">${L(x.variance_l)}</td>
             </tr>`).join('')}</tbody></table></div>
         </div>` : ''}
-
-        ${s.status === 'open' && can('shift') ? h`<button class="btn btn-primary" data-close>بستن این شفت</button>` : ''}
       </div>`;
+
     view.querySelector('[data-back]').onclick = () => go('#/shifts');
-    const cb = view.querySelector('[data-close]');
-    if (cb) cb.onclick = () => CloseShiftForm(s.id);
+    const on = (sel, fn) => { const e = view.querySelector(sel); if (e) e.onclick = fn; };
+    on('[data-close]', () => CloseShiftForm(s.id));
+    on('[data-ticket]', () => CreditTicketForm(s.id));
+    on('[data-price]', async () => {
+      const prods = S.meta.products;
+      const ov = sheet('تغییر نرخ در شفت جاری', h`
+        <form id="pcF" class="stack">
+          ${UI.field('محصول', UI.select('product_id', prods.map(p => ({ v: p.id, t: p.name })), prods[0].id))}
+          ${UI.field('نرخ جدید', UI.input('price', { type: 'number', cls: 'big' }))}
+          ${UI.field('توضیح', UI.input('note', { ph: 'مثلاً: نرخ‌نامه رسمی جدید' }))}
+          <button class="btn btn-primary btn-block" type="submit">ادامه — گرفتن ریدینگ نازل‌ها</button>
+        </form>`);
+      onSubmit(ov.querySelector('#pcF'), async d => {
+        closeSheet();
+        window.MidShiftPriceForm(s.id, Number(d.product_id), num(d.price), d.note);
+      });
+    });
   }
 
   const TENDER = { credit: 'نسیه', coupon: 'کوپن', bank: 'بانک', hawala: 'حواله', cash: 'نقده' };

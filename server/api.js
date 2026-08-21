@@ -46,19 +46,81 @@ function req(body, field, label) {
   if (v === undefined || v === null || v === '') throw fail(400, (label || field) + ' الزامی است');
   return v;
 }
+
+/* عدد لیتر/پول با پیام دری — نه «Invalid numeric input» */
+function numField(body, field, label, opts) {
+  opts = opts || {};
+  const raw = body[field];
+  if (raw === undefined || raw === null || raw === '') {
+    if (opts.optional) return opts.def === undefined ? 0 : opts.def;
+    throw fail(400, (label || field) + ' را وارد کنید');
+  }
+  const v = Number(String(raw).trim());
+  if (!isFinite(v)) throw fail(400, (label || field) + ' درست نیست');
+  if (opts.positive && v <= 0) throw fail(400, (label || field) + ' باید بزرگتر از صفر باشد');
+  if (opts.min !== undefined && v < opts.min)
+    throw fail(400, (label || field) + ' نمی‌تواند کمتر از ' + opts.min + ' باشد');
+  if (opts.max !== undefined && v > opts.max)
+    throw fail(400, (label || field) + ' نمی‌تواند بیشتر از ' + opts.max + ' باشد');
+  return v;
+}
+
+/* ثقلت: هم 0.84 هم 840 پذیرفته می‌شود، همیشه kg/لیتر ذخیره می‌گردد */
+function densityField(body, field, def) {
+  const raw = body[field];
+  if (raw === undefined || raw === null || raw === '') return N(def) || 0;
+  const d = Petro.normDensity(raw);
+  if (!d) throw fail(400, 'ثقلت (دانسیته) درست نیست. مثال: 0.84 یا 840');
+  return d;
+}
+
+/* کاربر محدود به یک استیشن نباید در استیشن دیگر سند بزند */
 function stationScope(user, stationId) {
-  if (user.station_id && Number(stationId) !== Number(user.station_id))
+  const id = Number(stationId);
+  if (!id) throw fail(400, 'استیشن را انتخاب کنید');
+  if (user && user.station_id && id !== Number(user.station_id))
     throw fail(403, 'به این استیشن دسترسی ندارید');
-  return Number(stationId);
+  return id;
+}
+
+/* ============================================================
+   قفل تاریخ — بعد از «بستن روز»
+   کاربر عادی نمی‌تواند سند با تاریخ بسته‌شده ثبت یا ویرایش کند.
+   مالک/مدیر می‌تواند، ولی دلیل اجباری است و هشدار ساخته می‌شود.
+   ============================================================ */
+function guardDate(user, stationId, dd, body, what) {
+  const closed = D.dayClosedAt(stationId, dd);
+  if (!closed) return null;
+  if (!can(user, 'admin') && !can(user, 'setup'))
+    throw fail(403, 'روز ' + Jalali.toShamsi(closed.doc_date) + ' بسته شده است. '
+      + 'برای ثبت سند با تاریخ گذشته، به مدیر مراجعه کنید.');
+  const reason = String((body && (body.backdate_reason || body.reason)) || '').trim();
+  if (reason.length < 5)
+    throw fail(400, 'روز ' + Jalali.toShamsi(closed.doc_date) + ' بسته شده است. '
+      + 'دلیل ثبت با تاریخ گذشته را کامل بنویسید.');
+  D.raiseAlert(stationId, 'high', 'BACKDATE_AFTER_CLOSE',
+    'ثبت سند با تاریخ بسته‌شده',
+    (what || 'سند') + ' با تاریخ ' + Jalali.toShamsi(dd) + ' ثبت شد در حالی که روز '
+    + Jalali.toShamsi(closed.doc_date) + ' بسته بود. کاربر: ' + user.full_name
+    + ' — دلیل: ' + reason, 'day_close', closed.id);
+  D.audit(user, 'ثبت با تاریخ بسته‌شده', 'day_close', closed.id,
+    (what || 'سند') + ' — تاریخ ' + dd + ' — دلیل: ' + reason);
+  return reason;
 }
 
 /* حجم خالص از دیپ */
-function dipVolumes(tankId, dipMm, waterMm) {
-  const chart = D.calibChart(tankId);
-  if (!chart.length) throw fail(400, 'جدول سنجش این تانک ثبت نشده است');
-  const gross = Petro.dipToVolume(chart, N(dipMm));
+function dipVolumes(tankId, dipMm, waterMm, versionId) {
+  const chart = D.calibChart(tankId, versionId);
+  if (!chart.length) throw fail(400, 'جدول سنجش این تانک ثبت نشده است. '
+    + 'اول در بخش تانک‌ها جدول سنجش را وارد کنید.');
+  const mm = N(dipMm);
+  if (mm < 0) throw fail(400, 'عدد دیپ نمی‌تواند منفی باشد');
+  const gross = Petro.dipToVolume(chart, mm);
   const water = N(waterMm) > 0 ? Petro.dipToVolume(chart, N(waterMm)) : 0;
-  return { gross: R(gross, 3), water: R(water, 3), net: R(gross - water, 3), chart };
+  return {
+    gross: R(gross, 3), water: R(water, 3), net: R(gross - water, 3), chart,
+    version_id: versionId || D.calibVersionAt(tankId)
+  };
 }
 
 function productOf(tankId) {
@@ -169,16 +231,30 @@ route('GET', '/auth/me', '', ({ user }) => ({
 
 /* ================= اطلاعات پایه صفحه ================= */
 route('GET', '/meta', '', ({ user }) => {
-  const where = user.station_id ? ` WHERE id=${Number(user.station_id)}` : ' WHERE active=1';
-  const stations = D.all(`SELECT * FROM station${where} ORDER BY name`);
+  const st = user.station_id ? Number(user.station_id) : null;
+  const stations = st
+    ? D.all(`SELECT * FROM station WHERE id=? ORDER BY name`, st)
+    : D.all(`SELECT * FROM station WHERE active=1 ORDER BY name`);
   return {
     stations,
     products: D.all(`SELECT * FROM product WHERE active=1 ORDER BY id`),
     base_currency: D.baseCurrency(),
     company: D.setting('company_name', 'شرکت'),
-    open_alerts: D.get(`SELECT COUNT(*) c FROM alert WHERE resolved=0`).c,
-    open_shifts: D.get(`SELECT COUNT(*) c FROM shift WHERE status='open'`).c,
-    role_names: ROLE_NAMES
+    open_alerts: st
+      ? D.get(`SELECT COUNT(*) c FROM alert WHERE resolved=0 AND (station_id IS NULL OR station_id=?)`, st).c
+      : D.get(`SELECT COUNT(*) c FROM alert WHERE resolved=0`).c,
+    open_shifts: st
+      ? D.get(`SELECT COUNT(*) c FROM shift WHERE status='open' AND station_id=?`, st).c
+      : D.get(`SELECT COUNT(*) c FROM shift WHERE status='open'`).c,
+    role_names: ROLE_NAMES,
+    /* ماژول‌های اختیاری — وقتی خاموش‌اند هیچ منوی اضافی نشان داده نمی‌شود */
+    features: {
+      consignment: D.settingOn('consignment_on', false),
+      orders: D.settingOn('orders_on', false),
+      quality: D.settingOn('quality_on', true),
+      transfer_require_dip: D.settingOn('transfer_require_dip', false)
+    },
+    currencies: ['AFN', 'USD', 'PKR', 'IRR', 'EUR']
   };
 });
 
@@ -224,13 +300,22 @@ route('PUT', '/products/:id', 'setup', ({ user, params, b }) => {
 
 /* ================= تانک ================= */
 function tankView(t) {
-  const book = D.tankBook(t.id);
+  const st = D.tankState(t.id);
+  const book = st.qty;
   const lastDip = D.get(`SELECT * FROM dip WHERE tank_id=? ORDER BY read_at DESC LIMIT 1`, t.id);
   const cap = N(t.capacity_l);
-  const chart = D.get(`SELECT COUNT(*) c FROM tank_calib WHERE tank_id=?`, t.id).c;
+  const chart = D.calibChart(t.id).length;
+  const cons = D.settingOn('consignment_on', false) ? st.consigned.map(c => {
+    const p = D.get(`SELECT name FROM party WHERE id=?`, c.party_id);
+    return { party_id: c.party_id, party_name: p ? p.name : ('#' + c.party_id), qty_l: c.qty_l };
+  }) : [];
   return Object.assign({}, t, {
     book_l: book,
-    wac: D.tankWac(t.id),
+    wac: st.wac,
+    stock_value: st.value,
+    owned_l: st.owned_l,                 // مال خود ما
+    consigned: cons,                     // امانتی دیگران
+    consigned_l: R(cons.reduce((s, c) => s + c.qty_l, 0), 3),
     fill_pct: cap > 0 ? R(book / cap * 100, 1) : 0,
     calib_points: chart,
     last_dip_at: lastDip ? lastDip.read_at : null,
@@ -283,8 +368,64 @@ route('PUT', '/tanks/:id', 'setup', ({ user, params, b }) => {
   D.audit(user, 'ویرایش تانک', 'tank', params.id, b.name);
 });
 
-/* جدول سنجش */
-route('GET', '/tanks/:id/calib', 'read', ({ params }) => D.calibChart(params.id));
+/* ============================================================
+   جدول سنجش تانک — نسخه‌دار
+   جدول قدیمی هرگز پاک نمی‌شود. هر بارگذاری یک «نسخه» جدید می‌سازد.
+   دیپ‌های گذشته با نسخه همان زمان قابل بررسی می‌مانند.
+   ============================================================ */
+route('GET', '/tanks/:id/calib', 'read', ({ params, q }) =>
+  D.calibChart(params.id, q.version_id ? Number(q.version_id) : null));
+
+route('GET', '/tanks/:id/calib/versions', 'read', ({ params }) => {
+  const t = D.get(`SELECT calib_version_id FROM tank WHERE id=?`, params.id);
+  return {
+    current_id: t ? t.calib_version_id : null,
+    versions: D.all(`SELECT v.*, u.full_name created_by_name FROM tank_calib_version v
+      LEFT JOIN app_user u ON u.id=v.created_by
+      WHERE v.tank_id=? ORDER BY v.version DESC`, params.id)
+  };
+});
+
+/* ساخت نسخه جدید از فهرست نقاط */
+function newCalibVersion(user, tankId, rows, meta) {
+  if (!Array.isArray(rows) || rows.length < 2)
+    throw fail(400, 'جدول سنجش حداقل به دو نقطه ضرورت دارد');
+  rows = rows.filter(r => isFinite(r.dip_mm) && isFinite(r.volume_l) && r.dip_mm >= 0 && r.volume_l >= 0)
+    .sort((a, b) => a.dip_mm - b.dip_mm);
+  if (rows.length < 2) throw fail(400, 'هیچ سطر معتبری یافت نشد');
+  for (let i = 1; i < rows.length; i++)
+    if (rows[i].volume_l < rows[i - 1].volume_l)
+      throw fail(400, 'جدول سنجش درست نیست: در دیپ ' + rows[i].dip_mm
+        + ' حجم از سطر قبلی کمتر است. حجم باید همیشه زیاد شود.');
+
+  return D.tx(() => {
+    const last = D.get(`SELECT MAX(version) v FROM tank_calib_version WHERE tank_id=?`, tankId);
+    const version = (last && last.v ? Number(last.v) : 0) + 1;
+    const eff = docDate(meta.effective_from);
+    const r = D.run(`INSERT INTO tank_calib_version
+      (tank_id,version,effective_from,source,certificate_no,issued_by,next_check,point_count,note,created_by,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      Number(tankId), version, eff, meta.source || 'real',
+      meta.certificate_no || null, meta.issued_by || null, meta.next_check || null,
+      rows.length, meta.note || null, user.id, D.now());
+    const vid = Number(r.lastInsertRowid);
+    for (const x of rows)
+      D.run(`INSERT OR REPLACE INTO tank_calib_point (version_id,dip_mm,volume_l) VALUES (?,?,?)`,
+        vid, R(x.dip_mm, 1), R(x.volume_l, 3));
+
+    /* جدول فعال تانک = این نسخه. کاپی در جدول قدیمی برای سازگاری. */
+    D.run(`UPDATE tank SET calib_version_id=? WHERE id=?`, vid, Number(tankId));
+    D.run(`DELETE FROM tank_calib WHERE tank_id=?`, Number(tankId));
+    for (const x of rows)
+      D.run(`INSERT OR REPLACE INTO tank_calib (tank_id,dip_mm,volume_l) VALUES (?,?,?)`,
+        Number(tankId), R(x.dip_mm, 1), R(x.volume_l, 3));
+
+    D.audit(user, 'ثبت نسخه جدید جدول سنجش', 'tank', tankId,
+      'نسخه ' + version + ' — ' + rows.length + ' نقطه — نافذ از ' + eff
+      + (meta.certificate_no ? ' — سرتیفیکیت ' + meta.certificate_no : ''));
+    return { version_id: vid, version, count: rows.length };
+  });
+}
 
 route('POST', '/tanks/:id/calib', 'setup', ({ user, params, b }) => {
   let rows = b.rows;
@@ -294,30 +435,93 @@ route('POST', '/tanks/:id/calib', 'setup', ({ user, params, b }) => {
       return { dip_mm: N(p[0]), volume_l: N(p[1]) };
     }).filter(r => isFinite(r.dip_mm) && isFinite(r.volume_l));
   }
-  if (!Array.isArray(rows) || !rows.length) throw fail(400, 'هیچ سطر معتبری یافت نشد');
-  rows.sort((a, b2) => a.dip_mm - b2.dip_mm);
-  D.tx(() => {
-    D.run(`DELETE FROM tank_calib WHERE tank_id=?`, params.id);
-    const st = D.db.prepare(`INSERT OR REPLACE INTO tank_calib (tank_id,dip_mm,volume_l) VALUES (?,?,?)`);
-    for (const r of rows) st.run(Number(params.id), R(r.dip_mm, 1), R(r.volume_l, 3));
-  });
-  D.audit(user, 'بارگذاری جدول سنجش', 'tank', params.id, rows.length + ' سطر');
-  return { count: rows.length };
+  return newCalibVersion(user, params.id, rows || [], Object.assign({ source: 'real' }, b));
 });
 
 /* تولید جدول سنجش خطی ساده (برای تانک استوانه‌ای عمودی یا تخمین اولیه) */
 route('POST', '/tanks/:id/calib/linear', 'setup', ({ user, params, b }) => {
-  const height = N(b.height_mm), cap = N(b.capacity_l), step = N(b.step_mm, 10) || 10;
-  if (height <= 0 || cap <= 0) throw fail(400, 'ارتفاع و ظرفیت باید بزرگتر از صفر باشد');
+  const height = numField(b, 'height_mm', 'ارتفاع تانک', { positive: true });
+  const cap = numField(b, 'capacity_l', 'ظرفیت', { positive: true });
+  const step = numField(b, 'step_mm', 'گام', { optional: true, def: 10 }) || 10;
   const rows = [];
   for (let mm = 0; mm <= height; mm += step) rows.push({ dip_mm: mm, volume_l: R(cap * mm / height, 3) });
-  D.tx(() => {
-    D.run(`DELETE FROM tank_calib WHERE tank_id=?`, params.id);
-    const st = D.db.prepare(`INSERT OR REPLACE INTO tank_calib (tank_id,dip_mm,volume_l) VALUES (?,?,?)`);
-    for (const r of rows) st.run(Number(params.id), r.dip_mm, r.volume_l);
+  return newCalibVersion(user, params.id, rows,
+    Object.assign({ source: 'linear', note: b.note || 'جدول خطی تخمینی' }, b));
+});
+
+/* ============================================================
+   کالیبراسیون نازل — تاریخچه‌دار
+   ============================================================ */
+route('GET', '/nozzles/:id/calib', 'read', ({ params }) =>
+  D.all(`SELECT c.*, u.full_name created_by_name FROM nozzle_calib c
+     LEFT JOIN app_user u ON u.id=c.created_by
+     WHERE c.nozzle_id=? ORDER BY c.effective_from DESC, c.id DESC`, params.id));
+
+route('POST', '/nozzles/:id/calib', 'setup', ({ user, params, b }) => {
+  const factor = numField(b, 'meter_factor', 'ضریب کالیبراسیون', { min: 0.9, max: 1.1 });
+  const eff = docDate(b.effective_from);
+  const nz = D.get(`SELECT * FROM nozzle WHERE id=?`, params.id);
+  if (!nz) throw fail(404, 'نازل یافت نشد');
+  return D.tx(() => {
+    const r = D.run(`INSERT INTO nozzle_calib
+      (nozzle_id,effective_from,meter_factor,error_ml,next_check,certificate_no,checked_by,note,created_by,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      Number(params.id), eff, factor,
+      b.error_ml === '' || b.error_ml === undefined ? null : N(b.error_ml),
+      b.next_check ? docDate(b.next_check) : null, b.certificate_no || null,
+      b.checked_by || null, b.note || null, user.id, D.now());
+    /* ضریب قبلی پاک نمی‌شود — فقط ضریب جاری نازل به‌روز می‌گردد */
+    D.run(`UPDATE nozzle SET meter_factor=?, calib_date=?, next_check=? WHERE id=?`,
+      factor, eff, b.next_check ? docDate(b.next_check) : null, Number(params.id));
+    D.audit(user, 'ثبت کالیبراسیون نازل', 'nozzle', params.id,
+      'ضریب ' + factor + ' از ' + eff + (b.certificate_no ? ' — سرتیفیکیت ' + b.certificate_no : ''));
+    return { id: Number(r.lastInsertRowid), meter_factor: factor };
   });
-  D.audit(user, 'تولید جدول سنجش خطی', 'tank', params.id, rows.length + ' سطر');
-  return { count: rows.length };
+});
+
+/* ============================================================
+   مهر تجهیزات
+   ============================================================ */
+route('GET', '/seals', 'read', ({ q }) => {
+  const args = []; let w = 'WHERE 1=1';
+  if (q.entity) { w += ' AND entity=?'; args.push(q.entity); }
+  if (q.entity_id) { w += ' AND entity_id=?'; args.push(Number(q.entity_id)); }
+  if (q.open === '1') w += ' AND removed_on IS NULL';
+  return D.all(`SELECT s.*, u.full_name created_by_name FROM equipment_seal s
+    LEFT JOIN app_user u ON u.id=s.created_by ${w}
+    ORDER BY s.applied_on DESC, s.id DESC LIMIT 200`, ...args);
+});
+
+route('POST', '/seals', 'ops', ({ user, b }) => {
+  const entity = String(req(b, 'entity', 'نوع تجهیز'));
+  if (['nozzle', 'dispenser', 'tank'].indexOf(entity) < 0) throw fail(400, 'نوع تجهیز نامعتبر');
+  const entityId = Number(req(b, 'entity_id', 'تجهیز'));
+  const sealNo = String(req(b, 'seal_no', 'شماره مهر')).trim();
+  return D.tx(() => {
+    /* مهر باز قبلی بسته شود */
+    D.run(`UPDATE equipment_seal SET removed_on=?, removed_reason=?
+           WHERE entity=? AND entity_id=? AND removed_on IS NULL`,
+      docDate(b.applied_on), b.replace_reason || 'مهر جدید نصب شد', entity, entityId);
+    const r = D.run(`INSERT INTO equipment_seal
+      (entity,entity_id,seal_no,applied_on,applied_by,note,created_by,created_at)
+      VALUES (?,?,?,?,?,?,?,?)`,
+      entity, entityId, sealNo, docDate(b.applied_on), b.applied_by || user.full_name,
+      b.note || null, user.id, D.now());
+    D.audit(user, 'ثبت مهر تجهیز', entity, entityId, 'مهر ' + sealNo);
+    return { id: Number(r.lastInsertRowid) };
+  });
+});
+
+route('POST', '/seals/:id/remove', 'ops', ({ user, params, b }) => {
+  const reason = String(b.reason || '').trim();
+  if (reason.length < 3) throw fail(400, 'دلیل باز کردن مهر را بنویسید');
+  D.run(`UPDATE equipment_seal SET removed_on=?, removed_reason=? WHERE id=?`,
+    docDate(b.removed_on), reason, params.id);
+  const s = D.get(`SELECT * FROM equipment_seal WHERE id=?`, params.id);
+  D.audit(user, 'باز کردن مهر تجهیز', s ? s.entity : 'seal', s ? s.entity_id : params.id, reason);
+  if (s) D.raiseAlert(null, 'medium', 'SEAL_REMOVED', 'مهر تجهیز باز شد',
+    'مهر ' + s.seal_no + ' از ' + s.entity + ' #' + s.entity_id + ' باز شد. دلیل: ' + reason,
+    'equipment_seal', Number(params.id));
 });
 
 /* ================= دستگاه و نازل ================= */
@@ -445,15 +649,40 @@ route('POST', '/prices', 'finance', ({ user, b }) => {
   return { id: Number(r.lastInsertRowid), open_shifts: openShift };
 });
 
-/* ================= نرخ اسعار ================= */
-route('GET', '/fx', 'read', () => D.all(`SELECT * FROM fx_rate ORDER BY rate_date DESC, ccy LIMIT 200`));
+/* ================= نرخ اسعار =================
+   نرخ تاریخی هر معامله روی خود سند ذخیره می‌شود و با ثبت نرخ جدید
+   هرگز تغییر نمی‌کند. این‌جا فقط نرخ روز برای پیشنهاد به کاربر است. */
+route('GET', '/fx', 'read', ({ q }) => {
+  const base = D.baseCurrency();
+  const list = D.all(`SELECT * FROM fx_rate ORDER BY rate_date DESC, ccy LIMIT 300`);
+  const ccys = ['USD', 'PKR', 'IRR', 'EUR'].filter(c => c !== base);
+  const d = docDate(q.date);
+  return {
+    base_currency: base,
+    current: ccys.map(c => ({ ccy: c, rate: D.fxRate(c, d) })),
+    history: list
+  };
+});
+
+/* نرخ یک ارز در یک تاریخ — برای پیش‌نمایش فورم‌ها */
+route('GET', '/fx/rate', 'read', ({ q }) => ({
+  ccy: q.ccy || D.baseCurrency(),
+  date: docDate(q.date),
+  rate: D.fxRate(q.ccy, docDate(q.date)),
+  base_currency: D.baseCurrency()
+}));
 
 route('POST', '/fx', 'finance', ({ user, b }) => {
-  req(b, 'ccy', 'ارز'); req(b, 'rate', 'نرخ');
-  D.run(`INSERT INTO fx_rate (rate_date,ccy,rate) VALUES (?,?,?)
-         ON CONFLICT(rate_date,ccy) DO UPDATE SET rate=excluded.rate`,
-    docDate(b.rate_date), b.ccy, N(b.rate));
-  D.audit(user, 'ثبت نرخ اسعار', 'fx_rate', null, b.ccy + '=' + b.rate);
+  const ccy = String(req(b, 'ccy', 'اسعار')).toUpperCase().trim();
+  const rate = numField(b, 'rate', 'نرخ اسعار', { positive: true });
+  if (ccy === D.baseCurrency()) throw fail(400, 'نرخ ارز پایه همیشه ۱ است و ثبت نمی‌شود');
+  const dd = docDate(b.rate_date);
+  D.run(`INSERT INTO fx_rate (rate_date,ccy,rate,note,created_at) VALUES (?,?,?,?,?)
+         ON CONFLICT(rate_date,ccy) DO UPDATE SET rate=excluded.rate, note=excluded.note`,
+    dd, ccy, rate, b.note || null, D.now());
+  D.audit(user, 'ثبت نرخ اسعار', 'fx_rate', null,
+    '۱ ' + ccy + ' = ' + rate + ' ' + D.baseCurrency() + ' — تاریخ ' + dd);
+  return { ccy, rate, rate_date: dd };
 });
 
 /* ================= کاربران ================= */
@@ -488,18 +717,47 @@ route('PUT', '/users/:id', 'admin', ({ user, params, b }) => {
 });
 
 /* ================= تنظیمات ================= */
-route('GET', '/settings', 'read', () => ({
-  company_name: D.setting('company_name', 'شرکت'),
-  base_currency: D.baseCurrency(),
-  fiscal_start: D.setting('fiscal_start', '01-01'),
-  cash_tolerance: D.setting('cash_tolerance', '50'),
-  dip_jump_pct: D.setting('dip_jump_pct', '25')
-}));
+const SETTING_KEYS = [
+  'company_name', 'base_currency', 'fiscal_start', 'cash_tolerance', 'dip_jump_pct',
+  'transfer_require_dip', 'consignment_on', 'orders_on', 'quality_on',
+  'backup_auto', 'backup_auto_hours', 'backup_dir', 'backup_keep', 'backup_overdue_hours',
+  'calib_warn_days'
+];
+
+function settingsView() {
+  return {
+    company_name: D.setting('company_name', 'شرکت'),
+    base_currency: D.baseCurrency(),
+    fiscal_start: D.setting('fiscal_start', '01-01'),
+    cash_tolerance: D.setting('cash_tolerance', '50'),
+    dip_jump_pct: D.setting('dip_jump_pct', '25'),
+    transfer_require_dip: D.settingOn('transfer_require_dip', false),
+    consignment_on: D.settingOn('consignment_on', false),
+    orders_on: D.settingOn('orders_on', false),
+    quality_on: D.settingOn('quality_on', true),
+    backup_auto: D.settingOn('backup_auto', true),
+    backup_auto_hours: D.setting('backup_auto_hours', '24'),
+    backup_dir: D.setting('backup_dir', ''),
+    backup_keep: D.setting('backup_keep', '20'),
+    backup_overdue_hours: D.setting('backup_overdue_hours', '48'),
+    calib_warn_days: D.setting('calib_warn_days', '30')
+  };
+}
+
+route('GET', '/settings', 'read', () => settingsView());
 
 route('POST', '/settings', 'setup', ({ user, b }) => {
-  ['company_name', 'base_currency', 'fiscal_start', 'cash_tolerance', 'dip_jump_pct']
-    .forEach(k => { if (b[k] !== undefined) D.setSetting(k, b[k]); });
-  D.audit(user, 'تغییر تنظیمات', 'setting', null, JSON.stringify(b));
+  const changed = [];
+  SETTING_KEYS.forEach(k => {
+    if (b[k] === undefined) return;
+    let v = b[k];
+    if (typeof v === 'boolean') v = v ? '1' : '0';
+    const old = D.setting(k, '');
+    if (String(old) !== String(v)) changed.push(k + ': ' + old + ' → ' + v);
+    D.setSetting(k, v);
+  });
+  if (changed.length) D.audit(user, 'تغییر تنظیمات', 'setting', null, changed.join('، '));
+  return settingsView();
 });
 
 /* ================= ثبت وقایع ================= */
@@ -529,8 +787,37 @@ route('POST', '/alerts/:id/resolve', 'ops', ({ user, params, b }) => {
   D.audit(user, 'بستن هشدار', 'alert', params.id, b.note);
 });
 
-module.exports = { handle, route, fail, can, need, ROLE_CAPS, ROLE_NAMES, dipVolumes, productOf, docDate, today, req, stationScope };
+/* ================= بکاپ ================= */
+const Backup = require('./backup');
+
+route('GET', '/backup', 'setup', () => Backup.status());
+
+route('POST', '/backup/now', 'setup', ({ user, b }) => {
+  const r = Backup.backupNow('manual', user, { dir: b.dir || null, note: b.note || null });
+  D.audit(user, 'گرفتن بکاپ', 'backup', null, r.file + ' — ' + Math.round(r.size_bytes / 1024) + ' KB');
+  /* هشدار «بکاپ گرفته نشده» را ببند */
+  D.run(`UPDATE alert SET resolved=1, resolved_by=?, resolved_at=?, resolve_note=?
+         WHERE code='BACKUP_OVERDUE' AND resolved=0`, user.id, D.now(), 'بکاپ گرفته شد');
+  return r;
+});
+
+route('POST', '/backup/validate', 'admin', ({ b }) =>
+  Backup.validate(String(req(b, 'file', 'فایل بکاپ'))));
+
+route('POST', '/backup/restore', 'admin', ({ user, b }) => {
+  const file = String(req(b, 'file', 'فایل بکاپ'));
+  if (b.confirm !== true) throw fail(400, 'برای برگرداندن بکاپ باید تایید کنید');
+  return Backup.restore(file, user);
+});
+
+module.exports = {
+  handle, route, fail, can, need, ROLE_CAPS, ROLE_NAMES,
+  dipVolumes, productOf, docDate, today, req, stationScope,
+  numField, densityField, guardDate, newCalibVersion, tankView
+};
 
 /* بارگذاری بخش عملیات و راپور (بعد از export تا وابستگی حلقوی نشکند) */
 require('./ops');
+require('./features');
 require('./reports');
+require('./reports-ops');

@@ -4,16 +4,43 @@
   const q = () => (S.stationId ? { station_id: S.stationId } : {});
   const CCY = () => S.meta.base_currency;
 
-  const REPORTS = [
-    { k: 'daily', t: 'راپور روزانه استیشن', d: 'یک صفحه: فروش، نقده، نسیه، دیپ، کسری' },
-    { k: 'variance', t: 'کسری تانک', d: 'روند کسری هر تانک و کشف نشتی یا دزدی' },
-    { k: 'operator', t: 'کارکرد اپراتور', d: 'فروش، کسری صندوق و روند هر نفر' },
-    { k: 'transit', t: 'کسری ترانزیت ترانسپورتران', d: 'کدام ترانسپورتر مکرر کم می‌آورد' },
-    { k: 'profit', t: 'سود و زیان', d: 'سود ناخالص هر محصول، مصارف، سود خالص' },
-    { k: 'aging', t: 'سن طلبات', d: 'طلبات 0-30، 31-60، 61-90، بالای 90 روز' },
-    { k: 'cash', t: 'جریان نقده', d: 'صندوق، بانک، حواله — ورود و خروج' },
-    { k: 'stations', t: 'مقایسه استیشن‌ها', d: 'فروش، سود، کسری کنار هم' },
-    { k: 'stockcard', t: 'دفتر موجودی تانک', d: 'هر حرکت لیتر با بیلانس جاری' }
+  /* راپورها گروه‌بندی شده — منو بزرگ و گیج‌کننده نشود */
+  const GROUPS = [
+    {
+      g: 'روزانه', items: [
+        { k: 'daily', t: 'راپور روزانه استیشن', d: 'یک صفحه: فروش، نقده، قرضی، دیپ، کسری' }
+      ]
+    },
+    {
+      g: 'فروش', items: [
+        { k: 'profit', t: 'سود و زیان', d: 'سود ناخالص هر محصول، مصارف، سود خالص' },
+        { k: 'credit', t: 'فروش قرضی مشتریان', d: 'کدام مشتری چقدر قرضی گرفت' },
+        { k: 'vehicles', t: 'فروش بر اساس موتر', d: 'هر موتر قراردادی چقدر تیل گرفت' },
+        { k: 'prices', t: 'تاریخچه نرخ', d: 'نرخ‌های ثبت‌شده و تغییر نرخ وسط شفت' }
+      ]
+    },
+    {
+      g: 'موجودی', items: [
+        { k: 'variance', t: 'کسری تانک', d: 'روند کسری هر تانک و کشف نشتی یا دزدی' },
+        { k: 'stockcard', t: 'دفتر موجودی تانک', d: 'هر حرکت لیتر با بیلانس جاری' },
+        { k: 'transfers', t: 'انتقال بین تانک‌ها', d: 'کدام تیل کجا رفت' },
+        { k: 'transit', t: 'کسری راه ترانسپورتران', d: 'کدام ترانسپورتر مکرر کم می‌آورد' },
+        { k: 'consignment', t: 'موجودی امانتی', d: 'مال خود ما در برابر مال دیگران' }
+      ]
+    },
+    {
+      g: 'حسابات', items: [
+        { k: 'aging', t: 'سن طلبات', d: 'طلبات ۰-۳۰، ۳۱-۶۰، ۶۱-۹۰، بالای ۹۰ روز' },
+        { k: 'cash', t: 'جریان نقده', d: 'صندوق، بانک، حواله — ورود و خروج' },
+        { k: 'stations', t: 'مقایسه استیشن‌ها', d: 'فروش، سود، کسری کنار هم' }
+      ]
+    },
+    {
+      g: 'کنترول', items: [
+        { k: 'operator', t: 'کارکرد اپراتور', d: 'فروش، کسری صندوق و روند هر نفر' },
+        { k: 'calibration', t: 'کالیبراسیون و مهر', d: 'کدام نازل یا تانک به کنترول ضرورت دارد' }
+      ]
+    }
   ];
 
   page('reports', async function (view, r) {
@@ -22,18 +49,25 @@
       view.innerHTML = h`
         <div class="pad section stack">
           <div class="section-title">راپورها</div>
-          <div class="grid-3">
-            ${REPORTS.map(x => h`<div class="card card-hover stack-s" data-r="${x.k}">
-              <div class="tank-icon">${ICON('chart', 20)}</div>
-              <div class="card-title">${esc(x.t)}</div>
-              <div class="muted-s">${esc(x.d)}</div>
+          ${GROUPS.map(gr => h`
+            <div class="section">
+              <div class="section-title" style="margin-bottom:1rem;font-size:1.05rem">${esc(gr.g)}</div>
+              <div class="grid-3">
+                ${gr.items.map(x => h`<div class="card card-hover stack-s" data-r="${x.k}">
+                  <div class="tank-icon">${ICON('chart', 20)}</div>
+                  <div class="card-title">${esc(x.t)}</div>
+                  <div class="muted-s">${esc(x.d)}</div>
+                </div>`).join('')}
+              </div>
             </div>`).join('')}
-          </div>
         </div>`;
       view.querySelectorAll('[data-r]').forEach(c => c.onclick = () => go('#/reports?r=' + c.dataset.r));
       return;
     }
-    const fn = { daily, variance, operator, transit, profit, aging, cash, stations, stockcard }[key];
+    const fn = {
+      daily, variance, operator, transit, profit, aging, cash, stations, stockcard,
+      credit, vehicles, transfers, prices, calibration, consignment
+    }[key];
     if (!fn) return go('#/reports');
     await fn(view, r);
   });
@@ -87,10 +121,23 @@
         ${head('راپور روزانه — ' + d.station.name, d.weekday + ' · ' + shLong(d.date))}
         ${filterBar(r, { single: true })}
 
+        ${d.day_closed ? UI.banner('ok', 'این روز بسته شده است'
+      + (d.day_close && d.day_close.closed_by_name ? ' — توسط ' + esc(d.day_close.closed_by_name) : '')
+      + '. ثبت سند با این تاریخ فقط با اجازه مدیر و دلیل ممکن است.')
+      : (can('setup') ? h`<div class="card no-print">
+          <div class="row-b">
+            <div>
+              <div class="card-title">بستن روز</div>
+              <div class="muted-s">بعد از بستن، کاربر عادی نمی‌تواند سند این روز را تغییر بدهد.</div>
+            </div>
+            <button class="btn btn-primary" data-dayclose>بستن روز</button>
+          </div>
+        </div>` : '')}
+
         <div class="grid-4 keep">
           ${UI.stat(L(T.total_liters), 'مجموع فروش (لیتر)')}
           ${UI.stat(money(T.total_amount), 'مجموع فروش (' + CCY() + ')')}
-          ${UI.stat(money(T.credit), 'فروش نسیه')}
+          ${UI.stat(money(T.credit), 'فروش قرضی')}
           ${UI.stat(money(T.cash_variance), 'کسر / اضافه صندوق', null, T.cash_variance < 0 ? 'neg' : '')}
         </div>
 
@@ -120,12 +167,17 @@
             </div>`).join('') : h`<div class="muted">فروشی ثبت نشده</div>`}
           </div>
           <div class="card stack">
-            <div class="card-title">تفکیک قبض</div><div class="hair"></div>
-            <div class="row-b"><span class="body-1">نقده</span><span class="num-strong">${money(T.retail_amount - T.credit - d.tenders.filter(t => t.kind !== 'credit').reduce((s, t) => s + num(t.amount), 0))}</span></div>
+            <div class="card-title">پول روز</div><div class="hair"></div>
+            <div class="row-b"><span class="body-1">نقده</span><span class="num-strong">${money(T.retail_amount
+      - d.tenders.reduce((s, t) => s + num(t.amount), 0) - T.credit_tickets)}</span></div>
+            ${T.credit_tickets > 0 ? h`<div class="row-b">
+              <span class="body-1">فروش قرضی (بلیت موتر)</span>
+              <span class="num-strong">${money(T.credit_tickets)}</span></div>` : ''}
             ${d.tenders.map(t => h`<div class="row-b">
-              <span class="body-1">${esc(({ credit: 'نسیه', coupon: 'کوپن', bank: 'بانک', hawala: 'حواله' })[t.kind] || t.kind)}</span>
+              <span class="body-1">${esc(({ credit: 'نسیه بدون بلیت', coupon: 'کوپن', bank: 'بانک', hawala: 'حواله' })[t.kind] || t.kind)}</span>
               <span class="num-strong">${money(t.amount)}</span></div>`).join('')}
             <div class="hair"></div>
+            <div class="row-b"><span class="muted">نقده شمرده‌شده</span><span class="num-strong">${money(T.cash_counted)}</span></div>
             <div class="row-b"><span class="muted">مصارف روز</span><span class="num-strong neg">${money(T.expenses)}</span></div>
           </div>
         </div>
@@ -153,8 +205,62 @@
               <td class="num ${x.variance_mt < 0 ? 't-neg' : ''}">${n(x.variance_mt, 3)}</td>
             </tr>`).join('')}</tbody></table></div>
         </div>` : ''}
+
+        ${d.credit_tickets.length ? h`<div class="card stack">
+          <div class="card-title">فروش قرضی</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>مشتری</th><th>موتر</th><th>محصول</th><th class="num">لیتر</th><th class="num">مبلغ</th></tr></thead>
+            <tbody>${d.credit_tickets.map(x => h`<tr>
+              <td>${esc(x.party_name)}</td><td>${esc(x.plate_no || '—')}</td>
+              <td>${esc(x.product_name || '—')}</td>
+              <td class="num">${L(x.qty_l)}</td><td class="num">${money(x.amount)}</td>
+            </tr>`).join('')}</tbody>
+            <tfoot><tr><td colspan="4">مجموع</td><td class="num">${money(T.credit_tickets)}</td></tr></tfoot>
+          </table></div>
+        </div>` : ''}
+
+        ${d.transfers.length ? h`<div class="card stack">
+          <div class="card-title">انتقال بین تانک‌ها</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>از</th><th>به</th><th>محصول</th><th class="num">لیتر</th><th>شرح</th></tr></thead>
+            <tbody>${d.transfers.map(x => h`<tr>
+              <td>${esc(x.from_code)}</td><td>${esc(x.to_code)}</td><td>${esc(x.product_name)}</td>
+              <td class="num">${L(x.qty_l)}</td><td class="muted-s">${esc(x.note || '')}</td>
+            </tr>`).join('')}</tbody></table></div>
+        </div>` : ''}
       </div>`;
     bindFilter(view, 'daily');
+
+    const dc = view.querySelector('[data-dayclose]');
+    if (dc) dc.onclick = () => DayCloseForm(stationId, d.date, d.totals);
+  }
+
+  /* ---------------- بستن روز ---------------- */
+  async function DayCloseForm(station, date, totals) {
+    const st = await API.get('/day-close', { station_id: station, date });
+    if (!st.can_close) {
+      return err('اول شفت‌های باز را ببندید: '
+        + st.open_shifts.map(x => x.operator_name).join('، '));
+    }
+    const ov = sheet('بستن روز — ' + shLong(date), h`
+      <form id="dcF" class="stack">
+        <div class="card card-flat stack-s">
+          <div class="row-b"><span class="muted">مجموع فروش</span>
+            <span class="num-strong">${L(totals.total_liters)} لیتر · ${money(totals.total_amount)}</span></div>
+          <div class="row-b"><span class="muted">نقده شمرده</span><span class="num-strong">${money(totals.cash_counted)}</span></div>
+          <div class="row-b"><span class="muted">فروش قرضی</span><span class="num-strong">${money(totals.credit)}</span></div>
+          <div class="row-b"><span class="muted">مصارف</span><span class="num-strong neg">${money(totals.expenses)}</span></div>
+        </div>
+        ${UI.banner('warn', 'بعد از بستن روز، کاربر عادی نمی‌تواند سند این روز یا روزهای قبل را ثبت یا تغییر بدهد. '
+      + 'مدیر می‌تواند، ولی دلیل اجباری است و هشدار ثبت می‌شود.')}
+        ${UI.field('توضیح', UI.input('note', { ph: 'اختیاری' }))}
+        <button class="btn btn-primary btn-block" type="submit">بستن روز</button>
+      </form>`);
+    onSubmit(ov.querySelector('#dcF'), async d => {
+      d.station_id = station; d.doc_date = date;
+      await API.post('/day-close', d);
+      closeSheet(); ok('روز بسته شد'); render();
+    });
   }
 
   /* ---------------- کسری تانک ---------------- */
@@ -397,6 +503,246 @@
     bindFilter(view, 'stockcard');
   }
 
+  /* ---------------- فروش قرضی مشتریان ---------------- */
+  async function credit(view, r) {
+    const d = await API.get('/reports/credit', Object.assign({ from: r.q.from, to: r.q.to }, q()));
+    view.innerHTML = h`
+      <div class="pad section stack">
+        ${head('فروش قرضی مشتریان', 'از ' + shLong(d.from) + ' تا ' + shLong(d.to))}
+        ${filterBar(r)}
+        <div class="grid-3 keep">
+          ${UI.stat(L(d.totals.liters), 'لیتر قرضی از نازل')}
+          ${UI.stat(money(d.totals.amount), 'مبلغ قرضی نازل')}
+          ${UI.stat(money(d.totals.bulk_amount), 'فروش عمده نسیه')}
+        </div>
+        ${d.rows.length ? h`<div class="card"><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>مشتری</th><th>تلفن</th><th class="num">بلیت</th><th class="num">موتر</th>
+            <th class="num">لیتر</th><th class="num">مبلغ</th><th class="num">سقف</th><th class="num">طلب فعلی</th></tr></thead>
+          <tbody>${d.rows.map(x => h`<tr class="clickable" data-p="${x.party_id}">
+            <td>${esc(x.party_name)}</td><td class="muted-s">${esc(x.phone || '—')}</td>
+            <td class="num">${fa(x.tickets)}</td><td class="num">${fa(x.vehicles)}</td>
+            <td class="num">${L(x.liters)}</td><td class="num">${money(x.amount)}</td>
+            <td class="num muted-s">${x.credit_limit > 0 ? money(x.credit_limit) : '—'}</td>
+            <td class="num ${x.over_limit ? 't-neg' : ''}">${money(x.balance)}</td>
+          </tr>`).join('')}</tbody>
+          <tfoot><tr><td colspan="4">مجموع</td><td class="num">${L(d.totals.liters)}</td>
+            <td class="num">${money(d.totals.amount)}</td><td colspan="2"></td></tr></tfoot>
+        </table></div></div>` : UI.empty('در این بازه فروش قرضی ثبت نشده')}
+
+        ${d.bulk_credit.length ? h`<div class="card stack">
+          <div class="card-title">فروش عمده نسیه</div><div class="hair"></div>
+          ${d.bulk_credit.map(x => h`<div class="row-b">
+            <span class="body-1">${esc(x.party_name)}</span>
+            <span><span class="num-strong">${L(x.liters)}</span> لیتر ·
+              <span class="num-strong">${money(x.amount)}</span></span>
+          </div>`).join('')}
+        </div>` : ''}
+      </div>`;
+    bindFilter(view, 'credit');
+    view.querySelectorAll('[data-p]').forEach(b => b.onclick = () => go('#/parties/' + b.dataset.p));
+  }
+
+  /* ---------------- فروش بر اساس موتر ---------------- */
+  async function vehicles(view, r) {
+    const d = await API.get('/reports/vehicles',
+      Object.assign({ from: r.q.from, to: r.q.to, party_id: r.q.party_id }, q()));
+    view.innerHTML = h`
+      <div class="pad section stack">
+        ${head('فروش بر اساس موتر', 'از ' + shLong(d.from) + ' تا ' + shLong(d.to)
+      + ' · ' + fa(d.days) + ' روز')}
+        ${filterBar(r)}
+        <div class="grid-2 keep">
+          ${UI.stat(L(d.totals.liters), 'مجموع لیتر')}
+          ${UI.stat(money(d.totals.amount), 'مجموع مبلغ')}
+        </div>
+        ${d.rows.length ? h`<div class="card"><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>نمبر پلیت</th><th>مشتری</th><th>نوع موتر</th><th>محصول</th>
+            <th class="num">دفعات</th><th class="num">لیتر</th><th class="num">هر بار</th>
+            <th class="num">روزانه</th><th class="num">مبلغ</th><th>آخرین بار</th></tr></thead>
+          <tbody>${d.rows.map(x => h`<tr>
+            <td class="num-strong">${esc(x.plate_no)}</td><td>${esc(x.party_name)}</td>
+            <td class="muted-s">${esc(x.vehicle_kind || '—')}</td>
+            <td class="muted-s">${esc(x.product_name || '—')}</td>
+            <td class="num">${fa(x.tickets)}</td><td class="num">${L(x.liters)}</td>
+            <td class="num">${L(x.per_ticket)}</td><td class="num">${L(x.per_day)}</td>
+            <td class="num">${money(x.amount)}</td><td>${sh(x.last_date)}</td>
+          </tr>`).join('')}</tbody></table></div></div>
+          <div class="card">${UI.banner('info',
+        '<b>چطور بخوانید:</b> اگر مصرف روزانه یک موتر ناگهان زیاد شود، یا یک موتر بیشتر از '
+        + 'ظرفیت تانک خودش تیل بگیرد، کنترل کنید. این نشانه فروش تیل به شخص دیگر است.')}</div>`
+        : UI.empty('در این بازه فروش قرضی موتری ثبت نشده')}
+      </div>`;
+    bindFilter(view, 'vehicles');
+  }
+
+  /* ---------------- انتقال بین تانک‌ها ---------------- */
+  async function transfers(view, r) {
+    const d = await API.get('/reports/transfers', Object.assign({ from: r.q.from, to: r.q.to }, q()));
+    view.innerHTML = h`
+      <div class="pad section stack">
+        ${head('انتقال بین تانک‌ها', 'از ' + shLong(d.from) + ' تا ' + shLong(d.to))}
+        ${filterBar(r)}
+        <div class="grid-3 keep">
+          ${UI.stat(fa(d.totals.count), 'تعداد انتقال')}
+          ${UI.stat(L(d.totals.liters), 'مجموع لیتر')}
+          ${UI.stat(fa(d.totals.reversed), 'برگشت‌خورده', null, d.totals.reversed ? 'neg' : '')}
+        </div>
+        ${d.rows.length ? h`<div class="card"><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>تاریخ</th><th>از تانک</th><th>به تانک</th><th>محصول</th>
+            <th class="num">لیتر</th><th class="num">بهای هر لیتر</th><th>ثبت‌کننده</th><th>وضعیت</th></tr></thead>
+          <tbody>${d.rows.map(x => h`<tr>
+            <td>${sh(x.doc_date)}</td><td>${esc(x.from_code)}</td><td>${esc(x.to_code)}</td>
+            <td>${esc(x.product_name)}</td><td class="num">${L(x.qty_l)}</td>
+            <td class="num">${n(x.unit_cost, 2)}</td>
+            <td class="muted-s">${esc(x.created_by_name || '—')}</td>
+            <td>${x.status === 'posted' ? 'ثبت شده'
+        : (x.status === 'reversed' ? '<span class="t-neg">برگشت خورده</span>' : 'سند برگشت')}</td>
+          </tr>`).join('')}</tbody></table></div></div>` : UI.empty('در این بازه انتقالی ثبت نشده')}
+      </div>`;
+    bindFilter(view, 'transfers');
+  }
+
+  /* ---------------- تاریخچه نرخ ---------------- */
+  async function prices(view, r) {
+    const d = await API.get('/reports/prices', Object.assign({ from: r.q.from, to: r.q.to }, q()));
+    view.innerHTML = h`
+      <div class="pad section stack">
+        ${head('تاریخچه نرخ', 'از ' + shLong(d.from) + ' تا ' + shLong(d.to))}
+        ${filterBar(r)}
+        <div class="grid-4">
+          ${d.current.map(p => h`<div class="card stat">
+            <div class="stat-num" style="color:${p.color}">${money(p.price)}</div>
+            <div class="stat-lbl">${esc(p.name)}</div>
+            <div class="stat-sub">نرخ امروز</div>
+          </div>`).join('')}
+        </div>
+        ${d.checkpoints.length ? h`<div class="card stack">
+          <div class="card-title">تغییر نرخ وسط شفت</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>تاریخ</th><th>وقت</th><th>محصول</th><th class="num">نرخ قدیم</th>
+              <th class="num">نرخ جدید</th><th>شفت</th><th>ثبت‌کننده</th></tr></thead>
+            <tbody>${d.checkpoints.map(c => h`<tr>
+              <td>${sh(c.doc_date)}</td><td>${timeOf(c.at)}</td><td>${esc(c.product_name)}</td>
+              <td class="num">${money(c.old_price)}</td><td class="num">${money(c.new_price)}</td>
+              <td><span class="link" data-s="${c.shift_id}">#${fa(c.shift_id)}</span></td>
+              <td class="muted-s">${esc(c.created_by_name || '—')}</td>
+            </tr>`).join('')}</tbody></table></div>
+        </div>` : ''}
+        ${d.rows.length ? h`<div class="card stack">
+          <div class="card-title">نرخ‌های ثبت‌شده</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>نافذ از</th><th>محصول</th><th>استیشن</th><th class="num">نرخ</th>
+              <th>اسعار</th><th>ثبت‌کننده</th><th>توضیح</th></tr></thead>
+            <tbody>${d.rows.map(p => h`<tr>
+              <td>${sh(p.effective_from)}</td><td>${esc(p.product_name)}</td>
+              <td>${esc(p.station_name || 'همه')}</td><td class="num">${money(p.price)}</td>
+              <td>${esc(p.currency)}</td><td class="muted-s">${esc(p.created_by_name || '—')}</td>
+              <td class="muted-s">${esc(p.note || '')}</td>
+            </tr>`).join('')}</tbody></table></div>
+        </div>` : UI.empty('در این بازه نرخی ثبت نشده')}
+      </div>`;
+    bindFilter(view, 'prices');
+    view.querySelectorAll('[data-s]').forEach(b => b.onclick = () => go('#/shifts/' + b.dataset.s));
+  }
+
+  /* ---------------- کالیبراسیون و مهر ---------------- */
+  async function calibration(view, r) {
+    const d = await API.get('/reports/calibration', q());
+    const badge = x => x.expired ? UI.chip('وقتش گذشته', 'red')
+      : (x.due_soon ? UI.chip('نزدیک ختم', 'yellow')
+        : (x.missing ? UI.chip('تاریخ ثبت نشده', 'grey') : UI.chip('در وقت', 'mint')));
+
+    view.innerHTML = h`
+      <div class="pad section stack">
+        ${head('کالیبراسیون و مهر', 'کنترول تا ' + fa(d.days) + ' روز آینده')}
+        <div class="row no-print">
+          <button class="btn-ghost" type="button" onclick="window.print()">${ICON('print', 16)} چاپ</button>
+          <button class="btn-ghost" type="button" data-back-rep>راپورهای دیگر</button>
+        </div>
+
+        <div class="card stack">
+          <div class="card-title">تانک‌ها — جدول سنجش</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>تانک</th><th>استیشن</th><th class="num">نسخه</th><th>نافذ از</th>
+              <th class="num">نقاط</th><th>سرتیفیکیت</th><th>کنترول بعدی</th><th>وضعیت</th></tr></thead>
+            <tbody>${d.tanks.map(t => h`<tr class="clickable" data-t="${t.id}">
+              <td>${esc(t.code)} — ${esc(t.name)}</td><td class="muted-s">${esc(t.station_name)}</td>
+              <td class="num">${t.version ? fa(t.version) : '—'}</td>
+              <td>${t.effective_from ? sh(t.effective_from) : '—'}</td>
+              <td class="num">${fa(t.point_count || 0)}</td>
+              <td class="muted-s">${esc(t.certificate_no || '—')}</td>
+              <td>${t.next_check ? sh(t.next_check) : '—'}</td>
+              <td>${badge(t)}${t.linear_warning ? ' ' + UI.chip('جدول تخمینی', 'yellow') : ''}</td>
+            </tr>`).join('')}</tbody></table></div>
+          ${d.tanks.some(t => t.linear_warning) ? UI.banner('warn',
+      'بعضی تانک‌ها جدول سنجش تخمینی دارند. عدد دیپ آن‌ها دقیق نیست — '
+      + 'جدول رسمی سنجش را از اداره معیارات بگیرید و وارد کنید.') : ''}
+        </div>
+
+        <div class="card stack">
+          <div class="card-title">نازل‌ها — کالیبراسیون کنتور</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>نازل</th><th>تانک</th><th class="num">ضریب</th><th>آخرین کنترول</th>
+              <th>کنترول بعدی</th><th class="num">سوابق</th><th>وضعیت</th></tr></thead>
+            <tbody>${d.nozzles.map(x => h`<tr>
+              <td>${esc(x.dispenser_code)} / ${esc(x.code)}</td><td>${esc(x.tank_code)}</td>
+              <td class="num">${fa(x.meter_factor)}</td>
+              <td>${x.calib_date ? sh(x.calib_date) : '—'}</td>
+              <td>${x.next_check ? sh(x.next_check) : '—'}</td>
+              <td class="num">${fa(x.history_count)}</td>
+              <td>${badge(x)}</td>
+            </tr>`).join('')}</tbody></table></div>
+        </div>
+
+        ${d.seals.length ? h`<div class="card stack">
+          <div class="card-title">مهرهای فعال</div><div class="hair"></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>تجهیز</th><th class="num">شماره</th><th>شماره مهر</th><th>تاریخ نصب</th><th>نصب‌کننده</th></tr></thead>
+            <tbody>${d.seals.map(s => h`<tr>
+              <td>${esc({ nozzle: 'نازل', dispenser: 'دستگاه', tank: 'تانک' }[s.entity] || s.entity)}</td>
+              <td class="num">${fa(s.entity_id)}</td><td>${esc(s.seal_no)}</td>
+              <td>${sh(s.applied_on)}</td><td class="muted-s">${esc(s.applied_by || '—')}</td>
+            </tr>`).join('')}</tbody></table></div>
+        </div>` : ''}
+      </div>`;
+    const b = view.querySelector('[data-back-rep]');
+    if (b) b.onclick = () => go('#/reports');
+    view.querySelectorAll('[data-t]').forEach(x => x.onclick = () => go('#/tanks/' + x.dataset.t));
+  }
+
+  /* ---------------- موجودی امانتی ---------------- */
+  async function consignment(view, r) {
+    const d = await API.get('/reports/consignment', q());
+    view.innerHTML = h`
+      <div class="pad section stack">
+        ${head('موجودی امانتی', 'مال خود ما در برابر تیل امانتی دیگران')}
+        <div class="row no-print">
+          <button class="btn-ghost" type="button" onclick="window.print()">${ICON('print', 16)} چاپ</button>
+          <button class="btn-ghost" type="button" data-back-rep>راپورهای دیگر</button>
+        </div>
+        ${d.enabled ? '' : UI.banner('info',
+      'ماژول امانتی خاموش است. اگر تیل امانتی دیگران را نگه می‌دارید، '
+      + 'از تنظیمات ← عمومی آن را روشن کنید.')}
+        <div class="grid-3 keep">
+          ${UI.stat(L(d.totals.physical_l), 'موجودی فزیکی (لیتر)')}
+          ${UI.stat(L(d.totals.owned_l), 'مال خود ما')}
+          ${UI.stat(L(d.totals.consigned_l), 'امانتی دیگران')}
+        </div>
+        <div class="card"><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>تانک</th><th>محصول</th><th class="num">فزیکی</th>
+            <th class="num">مال ما</th><th class="num">امانتی</th><th>صاحبان</th></tr></thead>
+          <tbody>${d.rows.map(x => h`<tr>
+            <td>${esc(x.code)} — ${esc(x.name)}</td><td>${esc(x.product_name)}</td>
+            <td class="num">${L(x.physical_l)}</td><td class="num">${L(x.owned_l)}</td>
+            <td class="num ${x.consigned_l > 0 ? 't-pos' : ''}">${L(x.consigned_l)}</td>
+            <td class="muted-s">${x.owners.length
+        ? x.owners.map(o => esc(o.party_name) + ' (' + L(o.qty_l) + ')').join('، ') : '—'}</td>
+          </tr>`).join('')}</tbody></table></div></div>
+      </div>`;
+    const b = view.querySelector('[data-back-rep]');
+    if (b) b.onclick = () => go('#/reports');
+  }
+
   /* ============================================================
      هشدارها
      ============================================================ */
@@ -454,20 +800,22 @@
   const TABS = [
     { k: 'stations', t: 'استیشن‌ها' }, { k: 'products', t: 'محصولات' },
     { k: 'tanks', t: 'تانک‌ها' }, { k: 'nozzles', t: 'دستگاه و نازل' },
-    { k: 'users', t: 'کاربران' }, { k: 'general', t: 'عمومی' }, { k: 'audit', t: 'ثبت وقایع' }
+    { k: 'users', t: 'کاربران', cap: 'admin' }, { k: 'general', t: 'عمومی' },
+    { k: 'backup', t: 'بکاپ', cap: 'setup' }, { k: 'audit', t: 'ثبت وقایع', cap: 'admin' }
   ];
 
   page('setup', async function (view, r) {
     const tab = r.q.t || 'stations';
     const body = await ({
       stations: setupStations, products: setupProducts, tanks: setupTanks,
-      nozzles: setupNozzles, users: setupUsers, general: setupGeneral, audit: setupAudit
+      nozzles: setupNozzles, users: setupUsers, general: setupGeneral,
+      backup: setupBackup, audit: setupAudit
     }[tab] || setupStations)();
 
     view.innerHTML = h`
       <div class="pad section stack">
         <div class="section-title">تنظیمات</div>
-        <div class="segs">${TABS.filter(x => (x.k === 'users' || x.k === 'audit') ? can('admin') : true)
+        <div class="segs">${TABS.filter(x => !x.cap || can(x.cap))
         .map(x => h`<button class="seg ${x.k === tab ? 'on' : ''}" data-t="${x.k}">${esc(x.t)}</button>`).join('')}</div>
         ${body.html}
       </div>`;
@@ -677,7 +1025,9 @@
                   <div class="muted-s">${esc(n2.product_name)} · تانک ${esc(n2.tank_code)} · ${fa(n2.meter_digits)} رقم · ضریب ${fa(n2.meter_factor)}</div>
                 </div>
                 <div class="row">
-                  <span class="muted-s">آخرین قرائت: <b>${fa(n2.last_reading)}</b></span>
+                  <span class="muted-s">آخرین ریدینگ: <b>${fa(n2.last_reading)}</b></span>
+                  ${n2.next_check ? UI.chip('کنترول ' + sh(n2.next_check), 'yellow') : ''}
+                  ${can('setup') ? h`<button class="btn-ghost btn-sm" data-cal='${esc(JSON.stringify(n2))}'>مهر و کالیبراسیون</button>` : ''}
                   ${can('setup') ? h`<button class="btn-ghost btn-sm" data-edn='${esc(JSON.stringify(n2))}'>ویرایش</button>` : ''}
                 </div>
               </div>`).join('') || h`<div class="muted">نازلی ندارد</div>`}
@@ -698,6 +1048,8 @@
         const nn = view.querySelector('[data-newn]');
         if (nn) nn.onclick = () => nozzleForm(null, disp, tanks);
         view.querySelectorAll('[data-edn]').forEach(b => b.onclick = () => nozzleForm(JSON.parse(b.dataset.edn), disp, tanks));
+        view.querySelectorAll('[data-cal]').forEach(b =>
+          b.onclick = () => window.NozzleCalibForm(JSON.parse(b.dataset.cal)));
       }
     };
   }
@@ -778,7 +1130,19 @@
   }
 
   async function setupGeneral() {
-    const s = await API.get('/settings');
+    const [s, fx] = await Promise.all([API.get('/settings'), API.get('/fx')]);
+    const chk = (name, on, label, hint) => h`
+      <div class="row-b">
+        <div>
+          <div class="body-1">${esc(label)}</div>
+          ${hint ? h`<div class="muted-s">${esc(hint)}</div>` : ''}
+        </div>
+        <label class="row" style="gap:.4rem">
+          <input type="checkbox" name="${name}" ${on ? 'checked' : ''}>
+          <span class="muted-s">فعال</span>
+        </label>
+      </div>`;
+
     return {
       html: h`
         <div class="card stack">
@@ -786,14 +1150,42 @@
           <form id="gF" class="stack">
             <div class="grid-2 keep">
               ${UI.field('نام شرکت', UI.input('company_name', { value: s.company_name }))}
-              ${UI.field('ارز پایه دفاتر', UI.select('base_currency', [
+              ${UI.field('اسعار پایه دفاتر', UI.select('base_currency', [
         { v: 'AFN', t: 'افغانی' }, { v: 'USD', t: 'دالر امریکایی' }], s.base_currency))}
-              ${UI.field('تولرانس صندوق', UI.input('cash_tolerance', { type: 'number', value: s.cash_tolerance }), 'کمتر از این مقدار هشدار نمی‌دهد')}
+              ${UI.field('حد مجاز کسر صندوق', UI.input('cash_tolerance', { type: 'number', value: s.cash_tolerance }), 'کمتر از این مقدار هشدار نمی‌دهد')}
               ${UI.field('حد پرش دیپ ٪', UI.input('dip_jump_pct', { type: 'number', value: s.dip_jump_pct }), 'تغییر بیش از این درصد ظرفیت = هشدار')}
             </div>
+
+            <div class="hair"></div>
+            <div class="card-title" style="font-size:1rem">بخش‌های اختیاری</div>
+            <div class="muted-s">وقتی خاموش‌اند، هیچ خانه یا منوی اضافی نشان داده نمی‌شود.</div>
+            ${chk('consignment_on', s.consignment_on, 'تیل امانتی',
+          'اگر تیل دیگران را در تانک خود نگه می‌دارید')}
+            ${chk('orders_on', s.orders_on, 'پیش‌خرید و پیش‌فروش',
+          'ثبت معامله‌ای که هنوز تحویل نشده')}
+            ${chk('quality_on', s.quality_on, 'کنترول کیفیت محموله',
+          'ثبت نتیجه لابراتوار روی ورود تیل')}
+            ${chk('transfer_require_dip', s.transfer_require_dip, 'دیپ اجباری در انتقال تیل',
+          'دیپ قبل و بعد انتقال حتماً پرسیده شود')}
+
             ${can('setup') ? h`<button class="btn btn-primary" type="submit" style="align-self:flex-start">ذخیره</button>` : ''}
           </form>
         </div>
+
+        <div class="card stack">
+          <div class="row-b">
+            <div class="card-title">نرخ اسعار</div>
+            ${can('finance') ? h`<button class="btn-ghost btn-sm" data-newfx>ثبت نرخ امروز</button>` : ''}
+          </div>
+          <div class="hair"></div>
+          ${fx.current.length ? fx.current.map(c => h`<div class="row-b">
+            <span class="body-1">۱ ${esc(c.ccy)}</span>
+            <span class="num-strong">${c.rate > 0 ? money(c.rate) + ' ' + esc(fx.base_currency)
+          : '<span class="muted-s">ثبت نشده</span>'}</span>
+          </div>`).join('') : h`<div class="muted">نرخی ثبت نشده</div>`}
+          <div class="muted-s">نرخ هر معامله روی خود سند می‌ماند و با ثبت نرخ جدید تغییر نمی‌کند.</div>
+        </div>
+
         <div class="card stack">
           <div class="card-title">درباره سیستم</div><div class="hair"></div>
           <div class="muted">سیستم مدیریت تانک تیل و پمپ استیشن — ساخته‌شده برای شرایط واقعی افغانستان.
@@ -801,12 +1193,163 @@
         </div>`,
       bind(view) {
         const f = view.querySelector('#gF');
-        if (f) f.onsubmit = async ev => {
-          ev.preventDefault();
-          try { await API.post('/settings', readForm(f)); S.meta = null; ok('ذخیره شد'); render(); }
-          catch (e) { err(e.message); }
+        if (f) onSubmit(f, async d => {
+          delete d.idem_key;
+          await API.post('/settings', d);
+          S.meta = null; ok('ذخیره شد'); render();
+        });
+        const nf = view.querySelector('[data-newfx]');
+        if (nf) nf.onclick = () => {
+          const ov = sheet('ثبت نرخ اسعار', h`
+            <form id="fxF" class="stack">
+              ${UI.field('اسعار', UI.select('ccy',
+            (S.meta.currencies || ['USD']).filter(c => c !== S.meta.base_currency)
+              .map(c => ({ v: c, t: c })), 'USD'))}
+              ${UI.field('۱ واحد چند ' + S.meta.base_currency + ' است؟',
+            UI.input('rate', { type: 'number', cls: 'big', ph: '68.5' }))}
+              ${UI.dateField('تاریخ', 'rate_date')}
+              ${UI.field('توضیح', UI.input('note'))}
+              <button class="btn btn-primary btn-block" type="submit">ثبت</button>
+            </form>`);
+          onSubmit(ov.querySelector('#fxF'), async d => {
+            await API.post('/fx', d);
+            closeSheet(); ok('نرخ ثبت شد'); render();
+          });
         };
       }
+    };
+  }
+
+  /* ---------------- بکاپ ---------------- */
+  const KB = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+
+  async function setupBackup() {
+    const s = await API.get('/backup');
+    const hours = s.hours_since;
+    const state = hours === null ? { k: 'warn', t: 'هنوز هیچ بکاپی گرفته نشده است' }
+      : (hours > Number(s.auto_hours) * 2
+        ? { k: 'error', t: 'آخرین بکاپ ' + fa(Math.round(hours)) + ' ساعت پیش بوده — بکاپ بگیرید' }
+        : { k: 'ok', t: 'آخرین بکاپ ' + fa(Math.round(hours)) + ' ساعت پیش گرفته شده' });
+
+    return {
+      html: h`
+        <div class="card stack">
+          <div class="row-b">
+            <div class="card-title">بکاپ دیتابیس</div>
+            ${can('setup') ? h`<button class="btn btn-primary" data-now>گرفتن بکاپ حالا</button>` : ''}
+          </div>
+          <div class="hair"></div>
+          ${UI.banner(state.k, state.t)}
+          <div class="grid-3 keep">
+            ${UI.stat(s.last_at ? dt(s.last_at) : '—', 'آخرین بکاپ')}
+            ${UI.stat(KB(s.db_size_bytes), 'حجم دیتابیس')}
+            ${UI.stat(fa(s.files.length), 'بکاپ موجود')}
+          </div>
+          <div class="row-b">
+            <span class="muted">محل بکاپ</span>
+            <span class="muted-s" dir="ltr">${esc(s.dir)}</span>
+          </div>
+          ${UI.banner('info', 'قاعده: هر شب یک بکاپ بگیرید و روی USB یا کمپیوتر دیگر کاپی کنید. '
+        + 'اگر هارد خراب شود، تنها همان کاپی بیرونی شما را نجات می‌دهد.')}
+        </div>
+
+        <div class="card stack">
+          <div class="card-title">تنظیمات بکاپ</div><div class="hair"></div>
+          <form id="bsF" class="stack">
+            <div class="row-b">
+              <div><div class="body-1">بکاپ خودکار روزانه</div>
+                <div class="muted-s">سیستم خودش هر روز یک بکاپ می‌گیرد</div></div>
+              <label class="row" style="gap:.4rem">
+                <input type="checkbox" name="backup_auto" ${s.auto ? 'checked' : ''}>
+                <span class="muted-s">فعال</span></label>
+            </div>
+            <div class="grid-2 keep">
+              ${UI.field('هر چند ساعت یک بار', UI.input('backup_auto_hours', { type: 'number', value: s.auto_hours }))}
+              ${UI.field('چند بکاپ خودکار نگه داشته شود', UI.input('backup_keep', { type: 'number', value: s.keep }))}
+            </div>
+            ${UI.field('پوشه بکاپ', UI.input('backup_dir', { value: s.dir === s.default_dir ? '' : s.dir, attrs: 'dir=ltr' }),
+          'خالی = پوشه backups داخل برنامه. برای ذخیره روی درایو دیگر یا USB، مسیر کامل را بنویسید — مثلاً D:\\pump-backup')}
+            ${can('setup') ? h`<button class="btn btn-primary" type="submit" style="align-self:flex-start">ذخیره</button>` : ''}
+          </form>
+        </div>
+
+        <div class="card stack">
+          <div class="card-title">بکاپ‌های موجود</div><div class="hair"></div>
+          ${s.files.length ? h`<div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>نام فایل</th><th>وقت</th><th class="num">حجم</th>
+              ${can('admin') ? '<th></th>' : ''}</tr></thead>
+            <tbody>${s.files.map(fl => h`<tr>
+              <td dir="ltr" style="text-align:start">${esc(fl.name)}</td>
+              <td>${dt(fl.mtime)}</td><td class="num">${esc(KB(fl.size_bytes))}</td>
+              ${can('admin') ? h`<td><button class="btn-ghost btn-sm" data-restore='${esc(fl.path)}'>برگرداندن</button></td>` : ''}
+            </tr>`).join('')}</tbody></table></div>`
+        : h`<div class="muted">هیچ فایل بکاپی در این پوشه نیست</div>`}
+        </div>`,
+      bind(view) {
+        const nb = view.querySelector('[data-now]');
+        if (nb) nb.onclick = async () => {
+          nb.disabled = true; nb.textContent = 'در حال گرفتن بکاپ…';
+          try {
+            const r = await API.post('/backup/now', {});
+            ok('بکاپ گرفته شد — ' + KB(r.size_bytes));
+            render();
+          } catch (e) { err(e.message); nb.disabled = false; nb.textContent = 'گرفتن بکاپ حالا'; }
+        };
+        const f = view.querySelector('#bsF');
+        if (f) onSubmit(f, async d => {
+          delete d.idem_key;
+          await API.post('/settings', d);
+          ok('ذخیره شد'); render();
+        });
+        view.querySelectorAll('[data-restore]').forEach(b =>
+          b.onclick = () => RestoreForm(b.dataset.restore));
+      }
+    };
+  }
+
+  /* برگرداندن بکاپ — با کنترول سلامت و بکاپ اضطراری */
+  async function RestoreForm(file) {
+    let v;
+    try { v = await API.post('/backup/validate', { file }); }
+    catch (e) { return err(e.message); }
+
+    const info = v.info || {};
+    const ov = sheet('برگرداندن بکاپ', h`
+      <div class="stack" id="rsBox">
+        <div class="card card-flat stack-s">
+          <div class="row-b"><span class="muted">فایل</span>
+            <span class="muted-s" dir="ltr">${esc(file.split(/[\\/]/).pop())}</span></div>
+          <div class="row-b"><span class="muted">وقت ساخت</span><span>${dt(info.mtime)}</span></div>
+          <div class="row-b"><span class="muted">استیشن</span><span>${esc(info.station || '—')}</span></div>
+          <div class="row-b"><span class="muted">تعداد کاربر</span><span>${fa(info.users || 0)}</span></div>
+          <div class="row-b"><span class="muted">حرکت موجودی</span><span>${fa(info.stock_moves || 0)}</span></div>
+        </div>
+        ${v.ok ? UI.banner('ok', 'کنترول سلامت این فایل موفق بود.')
+        : UI.banner('error', 'این فایل سالم نیست: ' + esc((v.problems || []).join('؛ ')))}
+        ${v.ok ? h`
+          <div class="banner banner-error"><div>
+            <b>هشدار:</b> با برگرداندن این بکاپ، تمام معاملات ثبت‌شده بعد از
+            ${dt(info.mtime)} از بین می‌رود.<br>
+            قبل از برگرداندن، سیستم خودش یک بکاپ اضطراری از وضعیت فعلی می‌گیرد.<br>
+            بعد از برگرداندن، همه کاربران باید دوباره وارد شوند.
+          </div></div>
+          ${UI.field('برای تایید، کلمه <b>برگردان</b> را بنویسید',
+          h`<input class="input" id="rsConfirm" placeholder="برگردان">`)}
+          <button class="btn btn-danger btn-block" id="rsGo">برگرداندن این بکاپ</button>` : ''}
+      </div>`);
+
+    const go = ov.querySelector('#rsGo');
+    if (go) go.onclick = async () => {
+      const t = (ov.querySelector('#rsConfirm').value || '').trim();
+      if (t !== 'برگردان') return err('برای تایید، کلمه «برگردان» را دقیقاً بنویسید');
+      go.disabled = true; go.textContent = 'در حال برگرداندن…';
+      try {
+        const r = await API.post('/backup/restore', { file, confirm: true });
+        closeSheet();
+        ok('بکاپ برگردانده شد. دوباره وارد سیستم شوید.');
+        setTimeout(() => logout(), 1200);
+        return r;
+      } catch (e) { err(e.message); go.disabled = false; go.textContent = 'برگرداندن این بکاپ'; }
     };
   }
 

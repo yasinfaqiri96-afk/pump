@@ -538,6 +538,57 @@ table.tbl tfoot td { font-weight: 700; color: var(--secondry-2); border-top: 1px
   @page { size: A4; margin: 12mm; }
 }
 
+/* ============================================================
+   جزئیات بیشتر — معلومات تخصصی اول پنهان است
+   ============================================================ */
+.more { border: 1px solid var(--n-grey-1); border-radius: 12px; background: var(--grey-1); }
+.more > summary {
+  cursor: pointer; list-style: none; padding: 0.7rem 1rem;
+  font-size: 0.9rem; font-weight: 600; color: var(--n-sec-2);
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before {
+  content: "+"; font-weight: 700; font-size: 1rem; line-height: 1;
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--n-sec-2-o); color: var(--n-sec-2);
+}
+.more[open] > summary::before { content: "−"; }
+.more[open] > summary { border-bottom: 1px solid var(--n-grey-1); }
+.more-body { padding: 1rem; }
+
+/* ============================================================
+   فورم پله‌ای — به جای یک صفحه با ۳۰ خانه
+   ============================================================ */
+.wiz { display: flex; flex-direction: column; gap: 1.25rem; }
+.wiz-bar {
+  display: flex; gap: 0.35rem; flex-wrap: wrap;
+  padding-bottom: 0.9rem; border-bottom: 1px solid var(--n-grey-1);
+}
+.wiz-dot {
+  display: flex; align-items: center; gap: 0.45rem; cursor: default;
+  border: 0; background: transparent; padding: 0.35rem 0.6rem; border-radius: 999px;
+  font-family: inherit; font-size: 0.85rem; font-weight: 500; color: var(--n-grey-2);
+}
+.wiz-dot i {
+  font-style: normal; width: 22px; height: 22px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-size: 0.78rem; font-weight: 700;
+  background: var(--n-grey-01); color: var(--n-grey-2);
+}
+.wiz-dot.on { background: var(--prime-1-o); color: var(--prime-1); }
+.wiz-dot.on i { background: var(--prime-1); color: #fff; }
+.wiz-dot.done { color: var(--prime-1); cursor: pointer; }
+.wiz-dot.done i { background: var(--prime-2-o); color: var(--prime-1); }
+.wiz-nav {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding-top: 1rem; border-top: 1px solid var(--n-grey-1);
+}
+@media (max-width: 700px) {
+  .wiz-dot span { display: none; }
+  .wiz-dot { padding: 0.35rem; }
+}
+
 /* ============ کمکی ============ */
 .nowrap { white-space: nowrap; }
 .txt-c { text-align: center; }

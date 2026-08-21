@@ -10,16 +10,22 @@ function range(q) {
   const from = q.from ? docDate(q.from) : Jalali.addDaysGreg(to, -29);
   return { from, to };
 }
-function stFilter(q, alias) {
-  if (!q.station_id) return { sql: '', args: [] };
-  return { sql: ` AND ${alias}.station_id=?`, args: [Number(q.station_id)] };
+function stFilter(q, alias, user) {
+  const st = (user && user.station_id) || q.station_id;
+  if (!st) return { sql: '', args: [] };
+  return { sql: ` AND ${alias}.station_id=?`, args: [Number(st)] };
+}
+/* استیشن مؤثر: کاربر محدود همیشه استیشن خودش را می‌بیند */
+function scopeId(user, q) {
+  if (user && user.station_id) return Number(user.station_id);
+  return q && q.station_id ? Number(q.station_id) : null;
 }
 
 /* ============================================================
    داشبورد
    ============================================================ */
 route('GET', '/reports/dashboard', 'read', ({ user, q }) => {
-  const stationId = q.station_id ? Number(q.station_id) : (user.station_id || null);
+  const stationId = scopeId(user, q);
   const d = today();
   const f = stationId ? ' AND station_id=' + stationId : '';
 
@@ -27,13 +33,16 @@ route('GET', '/reports/dashboard', 'read', ({ user, q }) => {
     FROM tank t JOIN product p ON p.id=t.product_id JOIN station s ON s.id=t.station_id
     WHERE t.active=1 ${stationId ? 'AND t.station_id=' + stationId : ''}
     ORDER BY s.name, t.code`).map(t => {
-    const book = D.tankBook(t.id);
+    const state = D.tankState(t.id);
+    const book = state.qty;
     const cap = N(t.capacity_l);
     const lastDip = D.get(`SELECT read_at, variance_l, variance_pct FROM dip
                            WHERE tank_id=? ORDER BY read_at DESC LIMIT 1`, t.id);
     return {
       id: t.id, code: t.code, name: t.name, product_name: t.product_name, color: t.color,
       uom: t.uom, station_name: t.station_name, capacity_l: cap, book_l: book,
+      owned_l: state.owned_l,
+      consigned_l: R(state.consigned.reduce((s, c) => s + c.qty_l, 0), 3),
       fill_pct: cap > 0 ? R(book / cap * 100, 1) : 0,
       low: cap > 0 && book <= N(t.min_level_l),
       last_dip_at: lastDip ? lastDip.read_at : null,
@@ -44,8 +53,8 @@ route('GET', '/reports/dashboard', 'read', ({ user, q }) => {
 
   const todaySales = D.get(`SELECT COALESCE(SUM(total_amount),0) amt, COALESCE(SUM(total_liters),0) lit
     FROM shift WHERE doc_date=? AND status='closed' ${f}`, d);
-  const todayBulk = D.get(`SELECT COALESCE(SUM(amount*fx_rate),0) amt, COALESCE(SUM(qty_obs),0) lit
-    FROM bulk_sale WHERE doc_date=? ${f}`, d);
+  const todayBulk = D.get(`SELECT COALESCE(SUM(amount_base),0) amt, COALESCE(SUM(qty_obs),0) lit
+    FROM bulk_sale WHERE doc_date=? AND status='posted' ${f}`, d);
 
   const cash = D.get(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_base ELSE -amount_base END),0) v
     FROM money_move WHERE account='cash' ${f}`);
@@ -57,11 +66,18 @@ route('GET', '/reports/dashboard', 'read', ({ user, q }) => {
   const payable = D.all(`SELECT id FROM party WHERE kind='supplier' AND active=1`)
     .reduce((s, p) => s + Math.min(D.partyBalance(p.id), 0), 0);
 
+  const todayCredit = D.get(`SELECT COALESCE(SUM(amount),0) v FROM credit_ticket
+    WHERE doc_date=? AND status='posted' ${f}`, d);
+  const dayClose = stationId
+    ? D.get(`SELECT * FROM day_close WHERE station_id=? AND doc_date=?`, stationId, d) : null;
+
   return {
     date: d, date_shamsi: Jalali.toShamsi(d), weekday: Jalali.weekdayOf(d),
     tanks,
     today_liters: R(N(todaySales.lit) + N(todayBulk.lit), 2),
     today_amount: R(N(todaySales.amt) + N(todayBulk.amt), 2),
+    today_credit: R(N(todayCredit.v), 2),
+    day_closed: !!(dayClose && dayClose.status === 'closed'),
     cash: R(N(cash.v), 2), bank: R(N(bank.v), 2),
     receivable: R(receivable, 2), payable: R(Math.abs(payable), 2),
     open_shifts: D.all(`SELECT s.id, s.opened_at, p.name operator_name, st.name station_name
@@ -80,8 +96,8 @@ route('GET', '/reports/dashboard', 'read', ({ user, q }) => {
         const dd = Jalali.addDaysGreg(d, -i);
         const a = D.get(`SELECT COALESCE(SUM(total_amount),0) amt, COALESCE(SUM(total_liters),0) lit
           FROM shift WHERE doc_date=? AND status='closed' ${f}`, dd);
-        const bl = D.get(`SELECT COALESCE(SUM(amount*fx_rate),0) amt, COALESCE(SUM(qty_obs),0) lit
-          FROM bulk_sale WHERE doc_date=? ${f}`, dd);
+        const bl = D.get(`SELECT COALESCE(SUM(amount_base),0) amt, COALESCE(SUM(qty_obs),0) lit
+          FROM bulk_sale WHERE doc_date=? AND status='posted' ${f}`, dd);
         out.push({
           date: dd, shamsi: Jalali.toShamsi(dd),
           liters: R(N(a.lit) + N(bl.lit), 1), amount: R(N(a.amt) + N(bl.amt), 2)
@@ -95,8 +111,8 @@ route('GET', '/reports/dashboard', 'read', ({ user, q }) => {
 /* ============================================================
    راپور روزانه استیشن
    ============================================================ */
-route('GET', '/reports/daily', 'read', ({ q }) => {
-  const stationId = Number(q.station_id || 0);
+route('GET', '/reports/daily', 'read', ({ user, q }) => {
+  const stationId = scopeId(user, q) || Number(q.station_id || 0);
   if (!stationId) throw fail(400, 'استیشن را انتخاب کنید');
   const d = docDate(q.date || today());
   const st = D.get(`SELECT * FROM station WHERE id=?`, stationId);
@@ -122,7 +138,23 @@ route('GET', '/reports/daily', 'read', ({ q }) => {
     FROM bulk_sale b LEFT JOIN party c ON c.id=b.customer_id JOIN tank t ON t.id=b.tank_id
     JOIN product p ON p.id=b.product_id WHERE b.station_id=? AND b.doc_date=?`, stationId, d);
 
-  const expenses = D.all(`SELECT * FROM expense WHERE station_id=? AND doc_date=?`, stationId, d);
+  const expenses = D.all(`SELECT * FROM expense WHERE station_id=? AND doc_date=? AND status='posted'`,
+    stationId, d);
+
+  /* فروش قرضی نازل — همان روز */
+  const creditTickets = D.all(`SELECT c.*, p.name party_name, v.plate_no, pr.name product_name
+    FROM credit_ticket c JOIN party p ON p.id=c.party_id
+    LEFT JOIN vehicle v ON v.id=c.vehicle_id LEFT JOIN product pr ON pr.id=c.product_id
+    WHERE c.station_id=? AND c.doc_date=? AND c.status='posted' ORDER BY c.id`, stationId, d);
+
+  const transfers = D.all(`SELECT tr.*, f.code from_code, t2.code to_code, p.name product_name
+    FROM tank_transfer tr JOIN tank f ON f.id=tr.from_tank_id JOIN tank t2 ON t2.id=tr.to_tank_id
+    JOIN product p ON p.id=tr.product_id
+    WHERE tr.station_id=? AND tr.doc_date=? AND tr.status='posted'`, stationId, d);
+
+  const dayClose = D.get(`SELECT dc.*, u.full_name closed_by_name FROM day_close dc
+    LEFT JOIN app_user u ON u.id=dc.closed_by
+    WHERE dc.station_id=? AND dc.doc_date=?`, stationId, d);
 
   const tankRows = D.all(`SELECT t.*, p.name product_name, p.color, p.uom FROM tank t
     JOIN product p ON p.id=t.product_id WHERE t.station_id=? AND t.active=1 ORDER BY t.code`, stationId)
@@ -148,21 +180,29 @@ route('GET', '/reports/daily', 'read', ({ q }) => {
 
   const retailAmt = shifts.reduce((s, x) => s + N(x.total_amount), 0);
   const retailLit = shifts.reduce((s, x) => s + N(x.total_liters), 0);
-  const bulkAmt = bulk.reduce((s, x) => s + N(x.amount) * N(x.fx_rate, 1), 0);
-  const bulkLit = bulk.reduce((s, x) => s + N(x.qty_obs), 0);
-  const expAmt = expenses.reduce((s, x) => s + N(x.amount) * N(x.fx_rate, 1), 0);
+  const bulkPosted = bulk.filter(x => x.status !== 'reversed');
+  const bulkAmt = bulkPosted.reduce((s, x) => s + N(x.amount_base, N(x.amount) * N(x.fx_rate, 1)), 0);
+  const bulkLit = bulkPosted.reduce((s, x) => s + N(x.qty_obs), 0);
+  const expAmt = expenses.reduce((s, x) => s + N(x.amount_base, N(x.amount) * N(x.fx_rate, 1)), 0);
   const cashVar = shifts.reduce((s, x) => s + N(x.cash_variance), 0);
+  const cashCounted = shifts.reduce((s, x) => s + N(x.cash_counted), 0);
+  const ticketAmt = creditTickets.reduce((s, x) => s + N(x.amount), 0);
+  const tenderCredit = tenders.filter(t => t.kind === 'credit').reduce((s, t) => s + N(t.amount), 0);
 
   return {
     station: st, date: d, date_shamsi: Jalali.toShamsi(d),
     date_long: Jalali.longShamsi(Jalali.toShamsi(d)), weekday: Jalali.weekdayOf(d),
     shifts, by_product: byProduct, tenders, receipts, bulk, expenses, tanks: tankRows,
+    credit_tickets: creditTickets, transfers,
+    day_close: dayClose || null,
+    day_closed: !!(dayClose && dayClose.status === 'closed'),
     totals: {
       retail_liters: R(retailLit, 2), retail_amount: R(retailAmt, 2),
       bulk_liters: R(bulkLit, 2), bulk_amount: R(bulkAmt, 2),
       total_liters: R(retailLit + bulkLit, 2), total_amount: R(retailAmt + bulkAmt, 2),
-      expenses: R(expAmt, 2), cash_variance: R(cashVar, 2),
-      credit: R(tenders.filter(t => t.kind === 'credit').reduce((s, t) => s + N(t.amount), 0), 2)
+      expenses: R(expAmt, 2), cash_variance: R(cashVar, 2), cash_counted: R(cashCounted, 2),
+      credit_tickets: R(ticketAmt, 2),
+      credit: R(tenderCredit + ticketAmt, 2)
     }
   };
 });

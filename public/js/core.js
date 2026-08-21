@@ -240,6 +240,101 @@
     }
   };
 
+  /* ============================================================
+     ثبت امن فورم
+     ۱. دکمه هنگام ثبت غیرفعال می‌شود تا دوبار زده نشود.
+     ۲. هر فورم یک «کلید یکتا» دارد؛ اگر شبکه قطع شد و کاربر دوباره
+        زد، سرور همان کلید را می‌بیند و سند دوم نمی‌سازد.
+     ============================================================ */
+  function idemKey() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'k-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+  window.idemKey = idemKey;
+
+  /* handler(data, key) — اگر خطا بدهد، دکمه دوباره فعال می‌شود. */
+  window.onSubmit = function (form, handler) {
+    if (!form) return;
+    const key = idemKey();
+    let busy = false;
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      if (busy) return;
+      busy = true;
+      const btns = Array.from(form.querySelectorAll('button[type=submit]'));
+      const old = btns.map(b => b.innerHTML);
+      btns.forEach(b => { b.disabled = true; b.innerHTML = 'در حال ثبت…'; });
+      try {
+        const d = readForm(form);
+        d.idem_key = key;
+        await handler(d, key);
+      } catch (e) {
+        err(e.message);
+        btns.forEach((b, i) => { b.disabled = false; b.innerHTML = old[i]; });
+      } finally { busy = false; }
+    });
+  };
+
+  /* «جزئیات بیشتر» — معلومات تخصصی اول پنهان است */
+  UI.more = function (label, inner, open) {
+    return h`<details class="more" ${open ? 'open' : ''}>
+      <summary>${esc(label || 'جزئیات بیشتر')}</summary>
+      <div class="more-body stack">${inner}</div>
+    </details>`;
+  };
+
+  /* فورم پله‌ای — به جای یک صفحه با ۳۰ خانه */
+  UI.wizard = function (steps, doneLabel) {
+    const bar = steps.map((s, i) =>
+      h`<button type="button" class="wiz-dot ${i === 0 ? 'on' : ''}" data-wgo="${i}">
+          <i>${fa(i + 1)}</i><span>${esc(s.title)}</span></button>`).join('');
+    const panes = steps.map((s, i) =>
+      h`<div class="wiz-pane stack ${i === 0 ? '' : 'hide'}" data-wpane="${i}">${s.body}</div>`).join('');
+    return h`<div class="wiz" data-wiz data-wcount="${steps.length}">
+      <div class="wiz-bar">${bar}</div>
+      ${panes}
+      <div class="wiz-nav">
+        <button type="button" class="btn-ghost hide" data-wprev>${ICON('forward', 16)} قبلی</button>
+        <div class="sp"></div>
+        <button type="button" class="btn btn-primary" data-wnext>بعدی ${ICON('back', 16)}</button>
+        <button class="btn btn-primary hide" type="submit" data-wdone>${esc(doneLabel || 'ثبت')}</button>
+      </div>
+    </div>`;
+  };
+
+  window.bindWizard = function (root, opts) {
+    opts = opts || {};
+    const wiz = root.querySelector('[data-wiz]');
+    if (!wiz) return;
+    const count = Number(wiz.dataset.wcount);
+    let at = 0;
+    function show(i) {
+      at = Math.max(0, Math.min(count - 1, i));
+      wiz.querySelectorAll('[data-wpane]').forEach(p =>
+        p.classList.toggle('hide', Number(p.dataset.wpane) !== at));
+      wiz.querySelectorAll('[data-wgo]').forEach(b => {
+        const n = Number(b.dataset.wgo);
+        b.classList.toggle('on', n === at);
+        b.classList.toggle('done', n < at);
+      });
+      wiz.querySelector('[data-wprev]').classList.toggle('hide', at === 0);
+      wiz.querySelector('[data-wnext]').classList.toggle('hide', at === count - 1);
+      wiz.querySelector('[data-wdone]').classList.toggle('hide', at !== count - 1);
+      const first = wiz.querySelector('[data-wpane="' + at + '"] input:not([readonly]),'
+        + '[data-wpane="' + at + '"] select');
+      if (first) setTimeout(() => first.focus(), 50);
+    }
+    wiz.querySelector('[data-wnext]').onclick = () => {
+      if (opts.validate && !opts.validate(at, readForm(root))) return;
+      show(at + 1);
+    };
+    wiz.querySelector('[data-wprev]').onclick = () => show(at - 1);
+    wiz.querySelectorAll('[data-wgo]').forEach(b =>
+      b.onclick = () => { const n = Number(b.dataset.wgo); if (n <= at) show(n); });
+    show(0);
+    return { go: show, at: () => at };
+  };
+
   /* فورم: خواندن مقادیر با تبدیل ارقام فارسی و تاریخ شمسی */
   window.readForm = function (root) {
     const out = {};

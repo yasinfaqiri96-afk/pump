@@ -21,14 +21,32 @@
     return Math.round(v * f) / f;
   }
 
-  /* ضریب تصحیح حجم به ۱۵ درجه سانتی‌گراد
-     ورودی density15 به kg/لیتر (مثلاً 0.84) — فرمول ASTM با kg/m³ کار می‌کند. */
+  /* ---------- یکسان‌سازی واحد ثقلت (دانسیته) ----------
+     در سیستم، ثقلت همه‌جا به kg/لیتر است (مثلاً 0.84).
+     ولی کاربر ممکن است عدد را به kg/m³ (840) وارد کند — و در جدول‌های
+     رسمی تیل هم معمولاً 840 نوشته می‌شود. اگر این عدد بدون تبدیل به
+     محاسبه تُن برود، نتیجه ۱۰۰۰ برابر غلط می‌شود.
+     پس هر ورودی ثقلت اول از این تابع می‌گذرد. */
+  function normDensity(d) {
+    var x = Number(d);
+    if (!isFinite(x) || x <= 0) return 0;
+    if (x > 10) x = x / 1000;          // kg/m³  ->  kg/L
+    if (x < 0.3 || x > 1.2) return 0;  // خارج از محدوده هر فرآورده نفتی
+    return round(x, 5);
+  }
+
+  /* ضریب تصحیح حجم به ۱۵ درجه سانتی‌گراد — ASTM D1250 / API MPMS 11.1
+     α₆₀ = K0/ρ² + K1/ρ   با ρ به kg/m³
+     VCF = exp(−α·Δt·(1 + 0.8·α·Δt)) */
   function vcf(density15, tempC, group) {
     var g = GROUPS[group] || GROUPS.none;
-    if (!density15 || (!g.k0 && !g.k1)) return 1;
-    var rho = density15 > 10 ? density15 : density15 * 1000;   // kg/m³
+    var d = normDensity(density15);
+    if (!d || (!g.k0 && !g.k1)) return 1;
+    var t = Number(tempC);
+    if (!isFinite(t)) return 1;
+    var rho = d * 1000;                                        // kg/m³
     var alpha = g.k0 / (rho * rho) + g.k1 / rho;               // 1/°C
-    var dt = tempC - 15;
+    var dt = t - 15;
     var v = Math.exp(-alpha * dt * (1 + 0.8 * alpha * dt));
     if (!isFinite(v) || v < 0.8 || v > 1.2) return 1;
     return round(v, 7);
@@ -39,25 +57,30 @@
     return round(volObs * vcf(density15, tempC, group), 4);
   }
 
-  /* حجم ۱۵ درجه -> تُن متریک (با تصحیح وزن در هوا) */
+  /* حجم ۱۵ درجه (لیتر) -> تُن متریک
+     0.0011 kg/L تصحیح وزن در هوا است (شناوری هوا) — همان چیزی که
+     در بارنامه‌های تیل «Weight in Air» نوشته می‌شود. */
   function toMT(v15, density15) {
-    if (!density15) return 0;
-    return round(v15 * (density15 - 0.0011) / 1000, 6);
+    var d = normDensity(density15);
+    if (!d) return 0;
+    return round(v15 * (d - 0.0011) / 1000, 6);
   }
 
-  /* تُن متریک -> حجم در ۱۵ درجه */
+  /* تُن متریک -> حجم در ۱۵ درجه (لیتر) */
   function mtToV15(mt, density15) {
-    if (!density15 || density15 <= 0.0011) return 0;
-    return round(mt * 1000 / (density15 - 0.0011), 4);
+    var d = normDensity(density15);
+    if (!d || d <= 0.0011) return 0;
+    return round(mt * 1000 / (d - 0.0011), 4);
   }
 
-  /* دانسیته مشاهده‌ای -> دانسیته در ۱۵ درجه (حل تکراری) */
+  /* ثقلت مشاهده‌ای -> ثقلت در ۱۵ درجه (حل تکراری) */
   function densityTo15(densObs, tempC, group) {
-    if (!densObs) return 0;
-    var d = densObs;
+    var d0 = normDensity(densObs);
+    if (!d0) return 0;
+    var d = d0;
     for (var i = 0; i < 25; i++) {
       var f = vcf(d, tempC, group);
-      var nd = densObs / f;
+      var nd = d0 / f;
       if (Math.abs(nd - d) < 1e-7) { d = nd; break; }
       d = nd;
     }
@@ -125,7 +148,8 @@
   }
 
   return {
-    GROUPS: GROUPS, vcf: vcf, toV15: toV15, toMT: toMT, mtToV15: mtToV15,
+    GROUPS: GROUPS, normDensity: normDensity,
+    vcf: vcf, toV15: toV15, toMT: toMT, mtToV15: mtToV15,
     densityTo15: densityTo15, dipToVolume: dipToVolume, volumeToDip: volumeToDip,
     nozzleSold: nozzleSold, variance: variance, round: round
   };

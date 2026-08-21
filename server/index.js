@@ -107,6 +107,45 @@ const server = http.createServer(async (req, res) => {
 
 require('./seed').ensureSeed();
 
+const Backup = require('./backup');
+
+/* ---------- نگهداری دوره‌ای ----------
+   بکاپ خودکار، پاک‌سازی نشست‌های منقضی و کلیدهای کهنه.
+   هر ۳۰ دقیقه، و یک بار در شروع. */
+function housekeeping() {
+  try {
+    D.run(`DELETE FROM session WHERE expires_at < ?`, D.now());
+    D.purgeIdemKeys();
+    Backup.autoTick();
+    calibrationWatch();
+  } catch (e) { console.error('[نگهداری]', e.message); }
+}
+
+/* هشدار کالیبراسیون نزدیک به ختم */
+function calibrationWatch() {
+  const days = Math.max(1, Number(D.setting('calib_warn_days', '30')) || 30);
+  const limit = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+  const nz = D.all(`SELECT n.id, n.code, n.next_check, d.station_id, d.code dispenser_code
+    FROM nozzle n JOIN dispenser d ON d.id=n.dispenser_id
+    WHERE n.active=1 AND n.next_check IS NOT NULL AND n.next_check <= ?`, limit);
+  for (const n of nz)
+    D.raiseAlert(n.station_id, 'medium', 'CALIBRATION_EXPIRED',
+      'کالیبراسیون نازل ' + n.dispenser_code + '/' + n.code + ' نزدیک ختم است',
+      'تاریخ کنترل بعدی: ' + n.next_check + '. کالیبراسیون نازل را تجدید کنید.',
+      'nozzle', n.id);
+
+  const tk = D.all(`SELECT v.tank_id, v.next_check, t.code, t.station_id
+    FROM tank_calib_version v JOIN tank t ON t.id=v.tank_id
+    WHERE v.id = t.calib_version_id AND v.next_check IS NOT NULL AND v.next_check <= ?`, limit);
+  for (const t of tk)
+    D.raiseAlert(t.station_id, 'medium', 'CALIBRATION_EXPIRED',
+      'جدول سنجش تانک ' + t.code + ' نزدیک ختم است',
+      'تاریخ کنترل بعدی: ' + t.next_check + '. جدول سنجش تجدید شود.', 'tank', t.tank_id);
+}
+
+housekeeping();
+setInterval(housekeeping, 30 * 60 * 1000).unref();
+
 server.listen(PORT, HOST, () => {
   const nets = require('node:os').networkInterfaces();
   const ips = [];
@@ -116,6 +155,11 @@ server.listen(PORT, HOST, () => {
   console.log('  ██  سیستم مدیریت تانک تیل و پمپ استیشن');
   console.log('  ─────────────────────────────────────────');
   console.log('  دیتابیس :  ' + D.DB_PATH);
+  if (D.MIG && D.MIG.applied && D.MIG.applied.length) {
+    console.log('  مهاجرت  :  ' + D.MIG.applied.length + ' مورد اجرا شد');
+    D.MIG.applied.forEach(m => console.log('             ' + m));
+    if (D.MIG.backup) console.log('  بکاپ قبل از مهاجرت: ' + D.MIG.backup);
+  }
   console.log('  محلی    :  http://localhost:' + PORT);
   ips.forEach(ip => console.log('  شبکه    :  http://' + ip + ':' + PORT));
   console.log('');
